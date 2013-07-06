@@ -18,4 +18,7 @@ tracker_ben = Bencode.new StringIO.new(res)
 tracker_data = tracker_ben.decode
 puts tracker_data[:peers].size
 
-#[truncated] Expert Info (Chat/Sequence): GET /tracker.php/6f7bef12d2f5f7bdfe1c2dc9967bc48d/announce?info_hash=%d9%a8g%f1%15%d9%07%a6U%18%0e%8f%c4%0f%9fQ%dd%00%27H&peer_id=-UT3300-%b9s%bb%811%af%a2%95%20%c6%e4P&port=13251&uploaded=0&downloa
+tracker_data[:peers].scan(/.{6}/).each do |x|
+	t = x.unpack('CCCCS>')
+	puts t[0..3].join('.')+':' + t[4].to_s
+end
