@@ -1,12 +1,14 @@
-require './bencode'
 require 'net/http'
 require 'socket'
 
-FILE_NAME = 'Continuum.torrent'
+require './bencode'
+require './peer'
+FILE_NAME = 'Defiance.torrent'
 
 ben = Bencode.new(FILE_NAME)
 data = ben.decode
-
+pieces = data[:info][:pieces].scan(/.{20}/)).size
+piece_length = data[:info][:"piece length"]
 params = { 	peer_id: '-RB0001-000000000001', event: 'started', info_hash: ben.info_hash.scan(/../).map(&:hex).pack('c*'),
 			port: 6881, uploaded: 0, downloaded: 0, left: data[:info][:length]
 		}
@@ -19,8 +21,7 @@ tracker_ben = Bencode.new StringIO.new(res)
 tracker_data = tracker_ben.decode
 puts tracker_data[:peers].size
 
-sockets = []
-
+peers = []
 
 puts 'hash = ' + ben.info_hash.scan(/../).map(&:hex).inspect
 tracker_data[:peers].scan(/.{6}/).take(10).each_with_index do |x, i|
@@ -35,30 +36,11 @@ tracker_data[:peers].scan(/.{6}/).take(10).each_with_index do |x, i|
 		if response[0] == 19
 			puts response.inspect
 			puts "#{i}) #{host}:#{port} - succeeded"
-			sockets << socket
+			peers << Peer.new(socket)
 		end
 	rescue Errno::ECONNRESET, Errno::ECONNABORTED, Errno::ETIMEDOUT, Errno::ECONNREFUSED
 		puts "#{i}) #{host}:#{port} - failed"
 	end
 end
-puts 'total connections: ' + sockets.size.to_s
-while sockets.size > 0
-	ready = select(sockets)
-	readable = ready[0]
-	readable.each do |socket|
-		len = socket.recv(4).unpack('C*')
-		puts len.inspect
-		len = len.pack('C*').unpack('L>')[0]
-		if !len
-			puts "#{socket.peeraddr[2]} disconnected"
-			sockets.delete socket
-			socket.close
-			next
-		end
-		puts "#{socket.peeraddr[2]} sends " + len.inspect
-		if len > 0
-			message_id = socket.recv 1
-			puts "#{socket.peeraddr[2]} sends len: #{len.to_i}, id: #{message_id.to_i}, payload " + socket.recv(len).unpack('C*').inspect
-		end
-	end
-end
+puts 'total connections: ' + peers.size.to_s
+peers.each{|x| x.start(pieces, piece_length).join}
