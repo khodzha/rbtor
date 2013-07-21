@@ -11,7 +11,7 @@ class Peer
 	end
 
 	def start 
-		Thread.new do
+		thread = Thread.new do
 			puts "starting data transmission for #{@socket.peeraddr[2]}"
 			Thread.new do
 				# keep alive
@@ -20,8 +20,8 @@ class Peer
 			end
 
 			while true do
-				message_len = @socket.recv(4, MSG_WAITALL).unpack('L>')
-				message = @socket.recv(message_len, MSG_WAITALL)
+				message_len = @socket.recv(4, Socket::MSG_WAITALL).unpack('L>')[0]
+				message = @socket.recv(message_len, Socket::MSG_WAITALL)
 				case message[0]
 				when 0
 					@peer_choking = true
@@ -47,6 +47,8 @@ class Peer
 				end
 			end
 		end
+		puts thread.inspect
+		thread
 	end
 
 	private
@@ -61,5 +63,7 @@ class Peer
 				index+=1
 			end
 		end
+
+		puts "peer has #{ @pieces.inject(0){|r, v| v[:have] == true ? r + 1 : r} } pieces"
 	end
 end
