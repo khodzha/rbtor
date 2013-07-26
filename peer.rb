@@ -1,5 +1,5 @@
 class Peer
-	def initialize(socket, pieces, piece_length)
+	def initialize(socket, pieces, piece_length, torrent)
 		@socket = socket
 		@am_interested = false
 		@am_choking = true
@@ -8,6 +8,7 @@ class Peer
 		@peer_choking = true
 		@pieces = pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, have: false}; r}
 		@piece_length = piece_length
+		@torrent = torrent
 	end
 
 	def start 

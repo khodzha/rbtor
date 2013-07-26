@@ -5,7 +5,7 @@ require 'thread'
 require './bencode'
 require './peer'
 
-class Launcher
+class Torrent
 	def initialize filename
 		@ben = Bencode.new(filename)
 		@data = @ben.decode
@@ -26,7 +26,7 @@ class Launcher
 
 		mutex = Mutex.new
 
-		@tracker_data[:peers].scan(/.{6}/).take(10).each do |x|
+		@tracker_data[:peers].scan(/.{6}/).take(10).each_with_index do |x, i|
 			thread = Thread.new do
 				t = x.unpack('CCCCS>')
 				host, port = t[0..3].join('.'), t[4]
@@ -38,13 +38,14 @@ class Launcher
 					response = data.unpack 'CA19QC20C20'
 					if response[0] == 19
 						mutex.synchronize do
-							@peers << Peer.new(socket, @pieces, @piece_length)
+							@peers << Peer.new(socket, @pieces, @piece_length, self)
 						end
 					end
 				rescue Errno::ECONNRESET, Errno::ECONNABORTED, Errno::ETIMEDOUT, Errno::ECONNREFUSED
 					puts "#{host}:#{port} - failed"
 				end
 			end
+			puts i, @peers.size
 			thread.join
 		end
 		while Thread.list.count > 1
@@ -52,5 +53,9 @@ class Launcher
 		end
 		puts 'total connections: ' + @peers.size.to_s
 		@peers.each{|x| x.start.join}
+		observe
+	end
+
+	def observe
 	end
 end
