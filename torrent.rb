@@ -45,14 +45,12 @@ class Torrent
 					puts "#{host}:#{port} - failed"
 				end
 			end
-			puts i, @peers.size
-			thread.join
 		end
 		while Thread.list.count > 1
 			sleep 5
 		end
 		puts 'total connections: ' + @peers.size.to_s
-		@peers.each{|x| x.start.join}
+		@peers.map(&:start).map(&:join)
 		observe
 	end
 

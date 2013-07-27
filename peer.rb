@@ -45,7 +45,9 @@ class Peer
 					# piece
 				when 8
 					# cancel
+				else
 				end
+				sleep 5
 			end
 		end
 		puts thread.inspect
