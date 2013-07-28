@@ -17,6 +17,7 @@ class Torrent
 		@uri = URI @data[:announce]
 		@uri.query = URI.encode_www_form params
 		@peers = []
+		@mutex = Mutex.new
 	end
 
 	def start
@@ -24,8 +25,6 @@ class Torrent
 		res = Net::HTTP.get_response(@uri).body
 		tracker_ben = Bencode.new StringIO.new(res)
 		@tracker_data = tracker_ben.decode
-
-		mutex = Mutex.new
 
 		@tracker_data[:peers].scan(/.{6}/).take(10).each_with_index do |x, i|
 			thread = Thread.new do
@@ -57,10 +56,12 @@ class Torrent
 
 	def update_pieces peer, piece_index
 		piece = @pieces[index]
-		if piece && !piece[:peers].include?(peer)
-			piece[:peers] << peer
-			piece[:peers_have] += 1
-			puts "#{peer} obtained piece at index #{piece_index}"
+		@mutex.synchronize do
+			if piece && !piece[:peers].include?(peer)
+				piece[:peers] << peer
+				piece[:peers_have] += 1
+				puts "#{peer} obtained piece at index #{piece_index}"
+			end
 		end
 	end
 end
