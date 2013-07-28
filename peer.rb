@@ -1,13 +1,14 @@
 class Peer
-	def initialize(socket, pieces, piece_length)
+	def initialize(socket, pieces, piece_length, torrent)
 		@socket = socket
 		@am_interested = false
 		@am_choking = true
 
 		@peer_interested = false
 		@peer_choking = true
-		@pieces = pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, have: false}; r}
+		@pieces = pieces
 		@piece_length = piece_length
+		@torrent = torrent
 	end
 
 	def start 
@@ -21,8 +22,12 @@ class Peer
 
 			while true do
 				message_len = @socket.recv(4, Socket::MSG_WAITALL).unpack('L>')[0]
+				next if message_len.nil?
 				message = @socket.recv(message_len, Socket::MSG_WAITALL)
-				case message[0]
+				puts "peer = #{self.to_s}"
+				puts "message_len = #{message_len}"
+				puts "message= #{message.unpack('C*')}"
+				case message.bytes[0]
 				when 0
 					@peer_choking = true
 				when 1
@@ -34,17 +39,23 @@ class Peer
 				when 4
 					# have
 					piece_index = message.unpack('C')[0]
-					@pieces[piece_index][:have] = true if @pieces[piece_index]
+					@torrent.update_pieces self, piece_index
 				when 5
 					# bitfield
 					bitfield_to_array message
 				when 6
-					#request
+					# request
+					index, start, length = message.unpack('L>L>L>')
+					@socket.puts @torrent.get_piece(index, start, length)
 				when 7
 					# piece
+					index, start, data = message.unpack('L>L>a*')
+					@torrent.save_piece index, start, data
 				when 8
 					# cancel
+				else
 				end
+				sleep 5
 			end
 		end
 		puts thread.inspect
@@ -54,16 +65,15 @@ class Peer
 	private
 
 	def bitfield_to_array bitfield
+		# OPTIMIZE need to rewrite with something like merge ?
 		index = 0
 		bitfield.unpack('C*').each do |byte|
 			0.upto(7).each do |offset|
-				if @pieces[index] && (byte & (1<<offset) == 1)
-					@pieces[index][:have] = true
+				if (byte & (1<<offset) == 1)
+					@torrent.update_pieces self, index
 				end
 				index+=1
 			end
 		end
-
-		puts "peer has #{ @pieces.inject(0){|r, v| v[:have] == true ? r + 1 : r} } pieces"
 	end
 end
