@@ -6,6 +6,8 @@ require './bencode'
 require './peer'
 
 class Torrent
+	attr_reader :mutex
+
 	def initialize filename
 		@ben = Bencode.new(filename)
 		@data = @ben.decode
@@ -37,7 +39,7 @@ class Torrent
 					data = socket.recv 49+19
 					response = data.unpack 'CA19QC20C20'
 					if response[0] == 19
-						mutex.synchronize do
+						@mutex.synchronize do
 							@peers << Peer.new(socket, @pieces, @piece_length, self)
 						end
 					end
@@ -52,10 +54,11 @@ class Torrent
 		puts 'total connections: ' + @peers.size.to_s
 		@pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0}; r}
 		@peers.map(&:start).map(&:join)
+		start_downloading
 	end
 
 	def update_pieces peer, piece_index
-		piece = @pieces[index]
+		piece = @pieces[piece_index]
 		@mutex.synchronize do
 			if piece && !piece[:peers].include?(peer)
 				piece[:peers] << peer
@@ -63,5 +66,16 @@ class Torrent
 				puts "#{peer} obtained piece at index #{piece_index}"
 			end
 		end
+	end
+
+	def save_piece index, start, data
+		f = File.open(@pieces[index][:hashsum].each_byte.map{ |b| b.to_s(16) }.join)
+		f.seek(start)
+		f.write(data)
+		f.close
+	end
+
+	private
+	def start_downloading
 	end
 end

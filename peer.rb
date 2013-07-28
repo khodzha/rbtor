@@ -24,7 +24,10 @@ class Peer
 				message_len = @socket.recv(4, Socket::MSG_WAITALL).unpack('L>')[0]
 				next if message_len.nil?
 				message = @socket.recv(message_len, Socket::MSG_WAITALL)
-				case message[0]
+				puts "peer = #{self.to_s}"
+				puts "message_len = #{message_len}"
+				puts "message= #{message.unpack('C*')}"
+				case message.bytes[0]
 				when 0
 					@peer_choking = true
 				when 1
@@ -42,8 +45,12 @@ class Peer
 					bitfield_to_array message
 				when 6
 					# request
+					index, start, length = message.unpack('L>L>L>')
+					@socket.puts @torrent.get_piece(index, start, length)
 				when 7
 					# piece
+					index, start, data = message.unpack('L>L>a*')
+					@torrent.save_piece index, start, data
 				when 8
 					# cancel
 				else
