@@ -20,6 +20,7 @@ class Torrent
 	end
 
 	def start
+		puts "Connecting to #{@uri.host}"
 		res = Net::HTTP.get_response(@uri).body
 		tracker_ben = Bencode.new StringIO.new(res)
 		@tracker_data = tracker_ben.decode
@@ -50,10 +51,16 @@ class Torrent
 			sleep 5
 		end
 		puts 'total connections: ' + @peers.size.to_s
+		@pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0}; r}
 		@peers.map(&:start).map(&:join)
-		observe
 	end
 
-	def observe
+	def update_pieces peer, piece_index
+		piece = @pieces[index]
+		if piece && !piece[:peers].include?(peer)
+			piece[:peers] << peer
+			piece[:peers_have] += 1
+			puts "#{peer} obtained piece at index #{piece_index}"
+		end
 	end
 end
