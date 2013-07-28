@@ -1,5 +1,5 @@
-require './launcher'
+require './torrent'
 
 FILE_NAME = 'Defiance.torrent'
 
-Launcher.new(FILE_NAME).start
+Torrent.new(FILE_NAME).start
