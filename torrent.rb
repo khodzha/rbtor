@@ -75,7 +75,14 @@ class Torrent
 		f.close
 	end
 
+	def get_piece index, start, length
+		file_name = @pieces[index][:hashsum].each_byte.map{ |b| b.to_s(16) }.join
+		File.read(file_name, length, start)
+	end
+
 	private
 	def start_downloading
+		piece = @pieces.sort_by(&:peers_have).first
+		piece.peers
 	end
 end
