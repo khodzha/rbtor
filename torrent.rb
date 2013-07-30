@@ -6,7 +6,7 @@ require './bencode'
 require './peer'
 
 class Torrent
-	attr_reader :mutex
+	attr_reader :mutex, :piece_length
 
 	def initialize filename
 		@ben = Bencode.new(filename)
@@ -52,7 +52,7 @@ class Torrent
 			sleep 5
 		end
 		puts 'total connections: ' + @peers.size.to_s
-		@pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0}; r}
+		@pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0, index: index}; r}
 		@peers.map(&:start).map(&:join)
 		start_downloading
 	end
@@ -69,10 +69,12 @@ class Torrent
 	end
 
 	def save_piece index, start, data
-		f = File.open(@pieces[index][:hashsum].each_byte.map{ |b| b.to_s(16) }.join)
-		f.seek(start)
-		f.write(data)
-		f.close
+		@mutex.synchronize do
+			File.open(@pieces[index][:hashsum].each_byte.map{ |b| b.to_s(16) }.join) do |f|
+				f.seek(start)
+				f.write(data)
+			end
+		end
 	end
 
 	def get_piece index, start, length
@@ -83,6 +85,6 @@ class Torrent
 	private
 	def start_downloading
 		piece = @pieces.sort_by(&:peers_have).first
-		piece.peers
+		piece.peers.sample.download piece
 	end
 end

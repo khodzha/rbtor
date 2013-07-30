@@ -1,3 +1,5 @@
+require 'io/wait'
+
 class Peer
 	def initialize(socket, pieces, piece_length, torrent)
 		@socket = socket
@@ -23,10 +25,9 @@ class Peer
 			while true do
 				message_len = @socket.recv(4, Socket::MSG_WAITALL).unpack('L>')[0]
 				next if message_len.nil?
+				sleep 0.1 until @socket.nread != message_len
 				message = @socket.recv(message_len, Socket::MSG_WAITALL)
-				puts "peer = #{self.to_s}"
-				puts "message_len = #{message_len}"
-				puts "message= #{message.unpack('C*')}"
+				puts "message #{[message_len, message.unpack('C*')].flatten}"
 				case message.bytes[0]
 				when 0
 					@peer_choking = true
@@ -38,7 +39,7 @@ class Peer
 					@peer_interested = false
 				when 4
 					# have
-					piece_index = message.unpack('C')[0]
+					piece_index = message.unpack('CL>')[1]
 					@torrent.update_pieces self, piece_index
 				when 5
 					# bitfield
@@ -62,6 +63,11 @@ class Peer
 		thread
 	end
 
+	def download piece
+		send_interested
+		send_request piece
+	end
+
 	private
 
 	def bitfield_to_array bitfield
@@ -73,6 +79,20 @@ class Peer
 					@torrent.update_pieces self, index
 				end
 				index+=1
+			end
+		end
+	end
+
+	def send_interested
+		@socket.print [1, 2].pack('L>C')
+	end
+
+	def send_request piece
+		Thread.new do
+			(@torrent.piece_length/(2**15.to_f)).ceil.times do |i|
+				data = [13, 6, piece[:index], i, 2**15]
+				puts data
+				@socket.print data.pack('L>CL>3')
 			end
 		end
 	end
