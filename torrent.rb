@@ -84,9 +84,13 @@ class Torrent
 
 	private
 	def start_downloading
+		threads = []
 		@pieces.sort_by{|x| x[:peers_have]}.select{|x| x[:peers_have] > 0}.each do |piece|
-			puts "start_downloading #{piece}"
-			piece.peers.sample.download piece
+			threads << Thread.new do
+				puts "start_downloading #{piece}"
+				piece.peers.sample.download piece
+			end
 		end
+		threads.map(&:join)
 	end
 end
