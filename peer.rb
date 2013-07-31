@@ -23,12 +23,14 @@ class Peer
 			end
 
 			while true do
-				message_len = @socket.recv(4, Socket::MSG_WAITALL).unpack('L>')[0]
+				sleep 0.1 while @socket.nread < 4
+				message_len = @socket.recv(4).unpack('L>')[0]
 				next if message_len.nil?
-				sleep 0.1 until @socket.nread != message_len
-				message = @socket.recv(message_len, Socket::MSG_WAITALL)
-				puts "message #{[message_len, message.unpack('C*')].flatten}"
-				case message.bytes[0]
+				sleep 0.1 while @socket.nread < message_len
+				message = @socket.recv(message_len)
+				message_id, payload = message.unpack('Ca*')
+				puts "message #{message_id} #{payload.unpack('C*')}"
+				case message_id
 				when 0
 					@peer_choking = true
 				when 1
@@ -39,24 +41,24 @@ class Peer
 					@peer_interested = false
 				when 4
 					# have
-					piece_index = message.unpack('CL>')[1]
+					piece_index = payload.unpack('L>')[0]
 					@torrent.update_pieces self, piece_index
 				when 5
 					# bitfield
-					bitfield_to_array message
+					bitfield_to_array payload
 				when 6
 					# request
-					index, start, length = message.unpack('L>L>L>')
+					index, start, length = payload.unpack('L>L>L>')
 					@socket.puts @torrent.get_piece(index, start, length)
 				when 7
 					# piece
-					index, start, data = message.unpack('L>L>a*')
+					index, start, data = payload.unpack('L>L>a*')
 					@torrent.save_piece index, start, data
 				when 8
 					# cancel
 				else
 				end
-				sleep 5
+				sleep 0.1
 			end
 		end
 		puts thread.inspect
@@ -90,9 +92,11 @@ class Peer
 	def send_request piece
 		Thread.new do
 			(@torrent.piece_length/(2**15.to_f)).ceil.times do |i|
-				data = [13, 6, piece[:index], i, 2**15]
-				puts data
-				@socket.print data.pack('L>CL>3')
+				@torrent.mutex.synchronize do
+					data = [13, 6, piece[:index], i, 2**15]
+					puts data
+					@socket.print data.pack('L>CL>3')
+				end
 			end
 		end
 	end

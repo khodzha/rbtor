@@ -84,7 +84,9 @@ class Torrent
 
 	private
 	def start_downloading
-		piece = @pieces.sort_by(&:peers_have).first
-		piece.peers.sample.download piece
+		@pieces.sort_by{|x| x[:peers_have]}.select{|x| x[:peers_have] > 0}.each do |piece|
+			puts "start_downloading #{piece}"
+			piece.peers.sample.download piece
+		end
 	end
 end
