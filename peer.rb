@@ -1,6 +1,10 @@
 require 'io/wait'
+require 'forwardable'
 
 class Peer
+	extend Forwardable
+	def_delegators :@torrent, :mutex
+
 	def initialize(socket, pieces, piece_length, torrent)
 		@socket = socket
 		@am_interested = false
@@ -48,12 +52,16 @@ class Peer
 					bitfield_to_array payload
 				when 6
 					# request
-					index, start, length = payload.unpack('L>L>L>')
-					@socket.puts @torrent.get_piece(index, start, length)
+					mutex.synchronize do
+						index, start, length = payload.unpack('L>L>L>')
+						@socket.print @torrent.get_piece(index, start, length)
+					end
 				when 7
 					# piece
-					index, start, data = payload.unpack('L>L>a*')
-					@torrent.save_piece index, start, data
+					mutex.synchronize do
+						index, start, data = payload.unpack('L>L>a*')
+						@torrent.save_piece index, start, data
+					end
 				when 8
 					# cancel
 				else
@@ -68,6 +76,13 @@ class Peer
 	def download piece
 		send_interested
 		send_request piece
+	end
+
+	def send_bitfield
+		mutex.synchronize do
+			bitfield_size = (@pieces.size/8.0).ceil
+			@socket.print [ bitfield_size + 1, 5, [0]*bitfield_size].flatten.pack('L>C*')
+		end
 	end
 
 	private
@@ -92,7 +107,7 @@ class Peer
 	def send_request piece
 		Thread.new do
 			(@torrent.piece_length/(2**15.to_f)).ceil.times do |i|
-				@torrent.mutex.synchronize do
+				mutex.synchronize do
 					data = [13, 6, piece[:index], i, 2**15]
 					puts data
 					@socket.print data.pack('L>CL>3')

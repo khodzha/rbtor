@@ -53,6 +53,7 @@ class Torrent
 		end
 		puts 'total connections: ' + @peers.size.to_s
 		@pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0, index: index}; r}
+		@peers.each{|x| x.send_bitfield}
 		@peers.map(&:start).map(&:join)
 		start_downloading
 	end
@@ -69,11 +70,9 @@ class Torrent
 	end
 
 	def save_piece index, start, data
-		@mutex.synchronize do
-			File.open(@pieces[index][:hashsum].each_byte.map{ |b| b.to_s(16) }.join) do |f|
-				f.seek(start)
-				f.write(data)
-			end
+		File.open(@pieces[index][:hashsum].each_byte.map{ |b| b.to_s(16) }.join) do |f|
+			f.seek(start)
+			f.write(data)
 		end
 	end
 
