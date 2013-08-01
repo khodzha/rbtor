@@ -17,9 +17,12 @@ class Peer
 		@torrent = torrent
 	end
 
+	def to_s
+		"#{@socket.peeraddr[2]}\t#{@peer_choking}\t#{@peer_interested}"
+	end
+
 	def start 
 		thread = Thread.new do
-			puts "starting data transmission for #{@socket.peeraddr[2]}"
 			Thread.new do
 				# keep alive
 				@socket.send [0].pack('L')
@@ -33,7 +36,7 @@ class Peer
 				sleep 0.1 while @socket.nread < message_len
 				message = @socket.recv(message_len)
 				message_id, payload = message.unpack('Ca*')
-				puts "message #{message_id} #{payload.unpack('C*')}"
+				puts "peer: #{self}\t#{message_len} #{message_id} #{payload.unpack('C*')}"
 				case message_id
 				when 0
 					@peer_choking = true
@@ -74,14 +77,19 @@ class Peer
 	end
 
 	def download piece
-		send_interested
-		send_request piece
+		mutex.synchronize do
+			send_unchoking
+			send_interested
+			send_request piece
+		end
 	end
 
 	def send_bitfield
 		mutex.synchronize do
 			bitfield_size = (@pieces.size/8.0).ceil
-			@socket.print [ bitfield_size + 1, 5, [0]*bitfield_size].flatten.pack('L>C*')
+			data = [ bitfield_size + 1, 5, [0]*bitfield_size].flatten
+			puts "sent bitfield #{data} to #{self}"
+			@socket.print data.pack('CL>C*')
 		end
 	end
 
@@ -98,6 +106,10 @@ class Peer
 				index+=1
 			end
 		end
+	end
+
+	def send_unchoking
+		@socket.print [1, 1].pack('L>C')
 	end
 
 	def send_interested

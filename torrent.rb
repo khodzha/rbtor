@@ -11,7 +11,8 @@ class Torrent
 	def initialize filename
 		@ben = Bencode.new(filename)
 		@data = @ben.decode
-		@pieces = @data[:info][:pieces].scan(/.{20}/)
+		unpack_format = 'a20'*(@data[:info][:pieces].size/20)
+		@pieces = @data[:info][:pieces].unpack(unpack_format)
 		@piece_length = @data[:info][:"piece length"]
 		params = { 	peer_id: '-RB0001-000000000001', event: 'started', info_hash: @ben.info_hash.scan(/../).map(&:hex).pack('c*'),
 					port: 6881, uploaded: 0, downloaded: 0, left: @data[:info][:length]
@@ -64,12 +65,12 @@ class Torrent
 			if piece && !piece[:peers].include?(peer)
 				piece[:peers] << peer
 				piece[:peers_have] += 1
-				puts "#{peer} obtained piece at index #{piece_index}"
 			end
 		end
 	end
 
 	def save_piece index, start, data
+		@downloaded_pieces << @pieces[index]
 		File.open(@pieces[index][:hashsum].each_byte.map{ |b| b.to_s(16) }.join) do |f|
 			f.seek(start)
 			f.write(data)
@@ -83,13 +84,12 @@ class Torrent
 
 	private
 	def start_downloading
-		threads = []
-		@pieces.sort_by{|x| x[:peers_have]}.select{|x| x[:peers_have] > 0}.each do |piece|
-			threads << Thread.new do
+		@downloaded_pieces = []
+		(@pieces-@downloaded_pieces).sort_by{|x| -x[:peers_have]}.select{|x| x[:peers_have] > 0}.each do |piece|
+			Thread.new do
 				puts "start_downloading #{piece}"
 				piece.peers.sample.download piece
 			end
 		end
-		threads.map(&:join)
 	end
 end
