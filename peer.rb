@@ -34,7 +34,7 @@ class Peer
 		thread = Thread.new do
 			Thread.new do
 				# keep alive
-				@socket.send [0].pack('L')
+				@socket.print [0].pack('L')
 				sleep 120
 			end
 
