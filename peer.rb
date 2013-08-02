@@ -22,6 +22,10 @@ class Peer
 		"#{@socket.peeraddr[2]}\t#{@peer_choking}\t#{@peer_interested}"
 	end
 
+	def inspect
+		"<#{self.to_s}>"
+	end
+
 	def start 
 		thread = Thread.new do
 			Thread.new do

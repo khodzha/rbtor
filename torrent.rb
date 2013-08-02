@@ -1,6 +1,7 @@
 require 'net/http'
 require 'socket'
 require 'thread'
+require 'debugger'
 
 require './bencode'
 require './peer'
@@ -22,6 +23,14 @@ class Torrent
 		@peers = []
 		@mutex = Mutex.new
 		@downloaded_pieces = []
+	end
+
+	def to_s
+		"#{@peers.size} #{@pieces.size} #{@downloaded_pieces.size}"
+	end
+
+	def inspect
+		"<#{self.to_s}>"
 	end
 
 	def start
@@ -54,6 +63,7 @@ class Torrent
 			sleep 5
 		end
 		puts 'total connections: ' + @peers.size.to_s
+		exit if @peers.size == 0
 		@pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0, index: index}; r}
 		@peers.each{|x| x.send_bitfield}
 		thread = Thread.new do
@@ -97,7 +107,7 @@ class Torrent
 				piece = (@pieces-@downloaded_pieces).sort_by{|x| -x[:peers_have]}.select{|x| x[:peers_have] > 0}.first
 				puts "start_downloading #{piece[:index]}"
 				debugger
-				piece.peers.sample.download piece
+				piece[:peers].sample.download piece
 			end
 		end
 	end
