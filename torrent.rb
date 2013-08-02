@@ -21,6 +21,7 @@ class Torrent
 		@uri.query = URI.encode_www_form params
 		@peers = []
 		@mutex = Mutex.new
+		@downloaded_pieces = []
 	end
 
 	def start
@@ -55,8 +56,10 @@ class Torrent
 		puts 'total connections: ' + @peers.size.to_s
 		@pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0, index: index}; r}
 		@peers.each{|x| x.send_bitfield}
-		@peers.map(&:start).map(&:join)
-		start_downloading
+		thread = Thread.new do
+			start_downloading
+		end
+		[@peers.map(&:start), thread].flatten.map(&:join)
 	end
 
 	def update_pieces peer, piece_index
@@ -70,24 +73,30 @@ class Torrent
 	end
 
 	def save_piece index, start, data
-		@downloaded_pieces << @pieces[index]
-		File.open(@pieces[index][:hashsum].each_byte.map{ |b| b.to_s(16) }.join) do |f|
-			f.seek(start)
-			f.write(data)
+		@mutex.synchronize do
+			@downloaded_pieces << @pieces[index]
+			File.open(@pieces[index][:hashsum].each_byte.map{ |b| b.to_s(16) }.join) do |f|
+				f.seek(start)
+				f.write(data)
+			end
 		end
 	end
 
 	def get_piece index, start, length
-		file_name = @pieces[index][:hashsum].each_byte.map{ |b| b.to_s(16) }.join
-		File.read(file_name, length, start)
+		@mutex.synchronize do
+			file_name = @pieces[index][:hashsum].each_byte.map{ |b| b.to_s(16) }.join
+			File.read(file_name, length, start)
+		end
 	end
 
 	private
 	def start_downloading
-		@downloaded_pieces = []
-		(@pieces-@downloaded_pieces).sort_by{|x| -x[:peers_have]}.select{|x| x[:peers_have] > 0}.each do |piece|
-			Thread.new do
-				puts "start_downloading #{piece}"
+		while true
+			sleep 0.1 while (@pieces-@downloaded_pieces).select{|x| x[:peers_have] > 0}.empty?
+			@mutex.synchronize do
+				piece = (@pieces-@downloaded_pieces).sort_by{|x| -x[:peers_have]}.select{|x| x[:peers_have] > 0}.first
+				puts "start_downloading #{piece[:index]}"
+				debugger
 				piece.peers.sample.download piece
 			end
 		end

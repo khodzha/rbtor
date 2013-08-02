@@ -15,6 +15,7 @@ class Peer
 		@pieces = pieces
 		@piece_length = piece_length
 		@torrent = torrent
+		@pieces_queue = []
 	end
 
 	def to_s
@@ -27,6 +28,15 @@ class Peer
 				# keep alive
 				@socket.send [0].pack('L')
 				sleep 120
+			end
+
+			Thread.new do
+				while true
+					sleep 0.1 while @pieces_queue.empty?
+					mutex.synchronize do
+						send_piece_request @pieces_queue.shift
+					end
+				end
 			end
 
 			while true do
@@ -77,11 +87,10 @@ class Peer
 	end
 
 	def download piece
-		mutex.synchronize do
-			send_unchoking
-			send_interested
-			send_request piece
-		end
+		puts "starting downloading #{piece[:index]}"
+		@pieces_queue << piece
+		send_unchoking
+		send_interested
 	end
 
 	def send_bitfield
@@ -94,6 +103,10 @@ class Peer
 	end
 
 	private
+
+	def send_piece_request piece
+		send_request piece
+	end
 
 	def bitfield_to_array bitfield
 		# OPTIMIZE need to rewrite with something like merge ?
@@ -109,11 +122,15 @@ class Peer
 	end
 
 	def send_unchoking
-		@socket.print [1, 1].pack('L>C')
+		data = [1, 1].pack('L>C')
+		puts data.inspect
+		@socket.print data
 	end
 
 	def send_interested
-		@socket.print [1, 2].pack('L>C')
+		data = [1, 2].pack('L>C')
+		puts data.inspect
+		@socket.print data
 	end
 
 	def send_request piece
