@@ -15,7 +15,6 @@ class Peer
 		@pieces = pieces
 		@piece_length = piece_length
 		@torrent = torrent
-		@pieces_queue = []
 		@downloading = false
 	end
 
@@ -40,15 +39,11 @@ class Peer
 
 			Thread.new do
 				while true
-					while @pieces_queue.empty?
-						mutex.synchronize do
-							@pieces_queue << @torrent.get_piece_for_downloading(self) if @peer_choking == false && @downloading == false
-						end
-						sleep 0.1
-					end
 					mutex.synchronize do
-						send_piece_request @pieces_queue.shift
+						piece = @torrent.get_piece_for_downloading(self) if @peer_choking == false && @downloading == false
+						send_piece_request(piece) if piece
 					end
+					sleep 0.5
 				end
 			end
 
@@ -144,14 +139,10 @@ class Peer
 	end
 
 	def send_request piece
-		Thread.new do
-			(@torrent.piece_length/(2**15.to_f)).ceil.times do |i|
-				mutex.synchronize do
-					data = [13, 6, piece[:index], i, 2**15]
-					puts data
-					@socket.print data.pack('L>CL>3')
-				end
-			end
+		(@torrent.piece_length/(2**15.to_f)).ceil.times do |i|
+			data = [13, 6, piece[:index], i, 2**15]
+			puts data
+			@socket.print data.pack('L>CL>3')
 		end
 	end
 end

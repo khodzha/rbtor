@@ -59,7 +59,7 @@ class Torrent
 			end
 		end
 		while Thread.list.count > 1
-			sleep 5
+			sleep 0.5
 		end
 		puts 'total connections: ' + @peers.size.to_s
 		exit if @peers.size == 0
