@@ -27,7 +27,10 @@ class Peer
 		"<#{self.to_s}>"
 	end
 
-	def start 
+	def start
+		send_bitfield
+		send_interested
+		send_unchoking
 		thread = Thread.new do
 			Thread.new do
 				# keep alive
@@ -99,6 +102,8 @@ class Peer
 		thread
 	end
 
+	private
+
 	def send_bitfield
 		mutex.synchronize do
 			bitfield_size = (@pieces.size/8.0).ceil
@@ -107,8 +112,6 @@ class Peer
 			@socket.print data.pack('CL>C*')
 		end
 	end
-
-	private
 
 	def send_piece_request piece
 		@downloading = true
