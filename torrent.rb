@@ -1,7 +1,6 @@
 require 'net/http'
 require 'socket'
 require 'thread'
-require 'debugger'
 
 require './bencode'
 require './peer'
@@ -66,10 +65,7 @@ class Torrent
 		exit if @peers.size == 0
 		@pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0, index: index}; r}
 		@peers.each{|x| x.send_bitfield}
-		thread = Thread.new do
-			start_downloading
-		end
-		[@peers.map(&:start), thread].flatten.map(&:join)
+		@peers.map(&:start).map(&:join)
 	end
 
 	def update_pieces peer, piece_index
@@ -99,16 +95,7 @@ class Torrent
 		end
 	end
 
-	private
-	def start_downloading
-		while true
-			sleep 0.1 while (@pieces-@downloaded_pieces).select{|x| x[:peers_have] > 0}.empty?
-			@mutex.synchronize do
-				piece = (@pieces-@downloaded_pieces).sort_by{|x| -x[:peers_have]}.select{|x| x[:peers_have] > 0}.first
-				puts "start_downloading #{piece[:index]}"
-				debugger
-				piece[:peers].sample.download piece
-			end
-		end
+	def get_piece_for_downloading peer
+		@pieces.select{|x| x[:peers].include?(peer)}.sort_by{|x| -x[:peers_have]}.first
 	end
 end

@@ -16,6 +16,7 @@ class Peer
 		@piece_length = piece_length
 		@torrent = torrent
 		@pieces_queue = []
+		@downloading = false
 	end
 
 	def to_s
@@ -28,6 +29,8 @@ class Peer
 
 	def start 
 		thread = Thread.new do
+			send_unchoking
+			send_interested
 			Thread.new do
 				# keep alive
 				@socket.send [0].pack('L')
@@ -36,7 +39,12 @@ class Peer
 
 			Thread.new do
 				while true
-					sleep 0.1 while @pieces_queue.empty?
+					while @pieces_queue.empty?
+						mutex.synchronize do
+							@pieces_queue << @torrent.get_piece_for_downloading(self) if @peer_choking == false && @downloading == false
+						end
+						sleep 0.1
+					end
 					mutex.synchronize do
 						send_piece_request @pieces_queue.shift
 					end
@@ -78,6 +86,7 @@ class Peer
 					mutex.synchronize do
 						index, start, data = payload.unpack('L>L>a*')
 						@torrent.save_piece index, start, data
+						@downloading = false
 					end
 				when 8
 					# cancel
@@ -88,13 +97,6 @@ class Peer
 		end
 		puts thread.inspect
 		thread
-	end
-
-	def download piece
-		puts "starting downloading #{piece[:index]}"
-		@pieces_queue << piece
-		send_unchoking
-		send_interested
 	end
 
 	def send_bitfield
@@ -109,6 +111,7 @@ class Peer
 	private
 
 	def send_piece_request piece
+		@downloading = true
 		send_request piece
 	end
 
