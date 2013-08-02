@@ -29,8 +29,6 @@ class Peer
 
 	def start 
 		thread = Thread.new do
-			send_unchoking
-			send_interested
 			Thread.new do
 				# keep alive
 				@socket.send [0].pack('L')
@@ -79,7 +77,9 @@ class Peer
 					# request
 					mutex.synchronize do
 						index, start, length = payload.unpack('L>L>L>')
-						@socket.print @torrent.get_piece(index, start, length)
+						data = @torrent.get_piece(index, start, length)
+						puts "REQUEST response: " + data.inspect
+						@socket.print data
 					end
 				when 7
 					# piece
@@ -103,7 +103,7 @@ class Peer
 		mutex.synchronize do
 			bitfield_size = (@pieces.size/8.0).ceil
 			data = [ bitfield_size + 1, 5, [0]*bitfield_size].flatten
-			puts "sent bitfield #{data} to #{self}"
+			puts "BITFIELD response: #{data}"
 			@socket.print data.pack('CL>C*')
 		end
 	end
@@ -130,13 +130,13 @@ class Peer
 
 	def send_unchoking
 		data = [1, 1].pack('L>C')
-		puts data.inspect
+		puts "UNCHOKE response: " + data.inspect
 		@socket.print data
 	end
 
 	def send_interested
 		data = [1, 2].pack('L>C')
-		puts data.inspect
+		puts "INTERESTED response: " + data.inspect
 		@socket.print data
 	end
 

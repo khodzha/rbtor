@@ -64,7 +64,7 @@ class Torrent
 		puts 'total connections: ' + @peers.size.to_s
 		exit if @peers.size == 0
 		@pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0, index: index}; r}
-		@peers.each{|x| x.send_bitfield}
+		@peers.each{|x| x.send_bitfield}.each{|x| x.send_interested}.each{|x| x.send_unchoking}
 		@peers.map(&:start).map(&:join)
 	end
 
