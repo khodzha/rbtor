@@ -16,10 +16,14 @@ class Peer
 		@piece_length = piece_length
 		@torrent = torrent
 		@downloading = false
+		@peeraddr = @socket.peeraddr[2]
+		@threads = []
 	end
 
 	def to_s
-		"#{@socket.peeraddr[2]}\t#{@peer_choking}\t#{@peer_interested}"
+		peer_str = @peeraddr.to_s
+		peer_str << "\t" if peer_str.size < 12
+		"#{peer_str}\t#{@peer_choking}\t#{@peer_interested}\t"
 	end
 
 	def inspect
@@ -30,38 +34,52 @@ class Peer
 		send_bitfield
 		send_interested
 		send_unchoking
-		thread = Thread.new do
-			Thread.new do
+		@threads << Thread.new do
+			while true
 				# keep alive
-				@socket.print [0].pack('L')
 				sleep 120
+				@socket.print [0].pack('L')
 			end
+		end
 
-			Thread.new do
-				while true
-					mutex.synchronize do
-						piece = @torrent.get_piece_for_downloading(self) if @peer_choking == false && @downloading == false
-						send_piece_request(piece) if piece
-					end
-					sleep 0.5
+		@threads << Thread.new do
+			while true
+				sleep 2
+				puts "#{time} #{self} #{@socket.closed?}"
+				puts "#{time} #{self} THREADS_STATUS: #{@threads.map(&:status).inspect}"
+			end
+		end
+
+		@threads << Thread.new do
+			while true
+				mutex.synchronize do
+					piece = @torrent.get_piece_for_downloading(self) if @peer_choking == false && @downloading == false
+					puts "#{time}: PIECE for downloading: #{piece[:index].inspect}" if piece
+					send_piece_request(piece) if piece
 				end
+				sleep 1
 			end
+		end
 
+		@threads << Thread.new do
 			while true do
-				sleep 0.1 while @socket.nread < 4
+				while @socket.nread < 4
+					puts "#{time} #{self} bytes: #{@socket.nread.inspect}"
+					sleep 1
+				end
 				message_len = @socket.recv(4).unpack('L>')[0]
 				next if message_len.nil?
-				sleep 0.1 while @socket.nread < message_len
+				sleep 1 while @socket.nread < message_len
 				message = @socket.recv(message_len)
 				message_id, payload = message.unpack('Ca*')
-				puts "peer: #{self}\t#{message_len} #{message_id} #{payload.unpack('C*')}"
+				puts "#{time} #{self}\t#{message_len} #{message_id} #{payload.unpack('C*')}"
 				case message_id
 				when 0
 					@peer_choking = true
 				when 1
 					@peer_choking = false
 				when 2
-					@peer_interested = true
+					@peer_interested = trueresponse
 				when 3
 					@peer_interested = false
 				when 4
@@ -93,8 +111,8 @@ class Peer
 				sleep 0.1
 			end
 		end
-		puts thread.inspect
-		thread
+		puts "THREADS_SIZE= #{@threads.size.inspect}"
+		@threads
 	end
 
 	private
@@ -103,7 +121,7 @@ class Peer
 		mutex.synchronize do
 			bitfield_size = (@pieces.size/8.0).ceil
 			data = [ bitfield_size + 1, 5, [0]*bitfield_size].flatten
-			puts "BITFIELD response: #{data}"
+			puts "BITFIELD message: #{data}"
 			@socket.print data.pack('CL>C*')
 		end
 	end
@@ -128,21 +146,25 @@ class Peer
 
 	def send_unchoking
 		data = [1, 1].pack('L>C')
-		puts "UNCHOKE response: " + data.inspect
+		puts "UNCHOKE message: " + data.inspect
 		@socket.print data
 	end
 
 	def send_interested
 		data = [1, 2].pack('L>C')
-		puts "INTERESTED response: " + data.inspect
+		puts "INTERESTED message: " + data.inspect
 		@socket.print data
 	end
 
 	def send_request piece
 		(@torrent.piece_length/(2**15.to_f)).ceil.times do |i|
-			data = [13, 6, piece[:index], i, 2**15]
-			puts data
+			data = [13, 6, piece[:index], i*(2**15), 2**15]
+			puts "REQUEST message: #{data.inspect}"
 			@socket.print data.pack('L>CL>3')
 		end
+	end
+
+	def time
+		Time.now.strftime('%T')+"\t"
 	end
 end

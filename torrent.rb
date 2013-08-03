@@ -1,6 +1,7 @@
 require 'net/http'
 require 'socket'
 require 'thread'
+require 'timeout'
 
 require './bencode'
 require './peer'
@@ -37,34 +38,34 @@ class Torrent
 		res = Net::HTTP.get_response(@uri).body
 		tracker_ben = Bencode.new StringIO.new(res)
 		@tracker_data = tracker_ben.decode
-
+		threads = []
 		@tracker_data[:peers].scan(/.{6}/).take(10).each_with_index do |x, i|
-			thread = Thread.new do
+			threads << Thread.new do
 				t = x.unpack('CCCCS>')
 				host, port = t[0..3].join('.'), t[4]
 				begin
-					socket = TCPSocket.new(host, port)
-					handshake = [19].pack('C') + 'BitTorrent protocol' + [0].pack('Q') + @ben.info_hash.scan(/../).map(&:hex).pack('c*') + '-RB0001-000000000001'
-					socket.puts handshake
-					data = socket.recv 49+19
-					response = data.unpack 'CA19QC20C20'
-					if response[0] == 19
-						@mutex.synchronize do
-							@peers << Peer.new(socket, @pieces, @piece_length, self)
+					Timeout::timeout(10) do
+						socket = TCPSocket.new(host, port)
+						handshake = [19].pack('C') + 'BitTorrent protocol' + [0].pack('Q') + @ben.info_hash.scan(/../).map(&:hex).pack('c*') + '-RB0001-000000000001'
+						socket.print handshake
+						data = socket.recv 49+19
+						response = data.unpack 'CA19QC20C20'
+						if response[0] == 19
+							@mutex.synchronize do
+								@peers << Peer.new(socket, @pieces, @piece_length, self)
+							end
 						end
 					end
-				rescue Errno::ECONNRESET, Errno::ECONNABORTED, Errno::ETIMEDOUT, Errno::ECONNREFUSED
+				rescue Errno::ECONNRESET, Errno::ECONNABORTED, Errno::ETIMEDOUT, Errno::ECONNREFUSED, Timeout::Error
 					puts "#{host}:#{port} - failed"
 				end
 			end
 		end
-		while Thread.list.count > 1
-			sleep 0.5
-		end
+		threads.map &:join
 		puts 'total connections: ' + @peers.size.to_s
 		exit if @peers.size == 0
 		@pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0, index: index}; r}
-		@peers.map(&:start).map(&:join)
+		@peers.map(&:start).flatten.map(&:join)
 	end
 
 	def update_pieces peer, piece_index
