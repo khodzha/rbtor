@@ -1,6 +1,8 @@
 require 'io/wait'
 require 'forwardable'
 
+$logging = false
+
 class Peer
 	extend Forwardable
 	def_delegators :@torrent, :mutex
@@ -18,6 +20,7 @@ class Peer
 		@downloading = false
 		@peeraddr = @socket.peeraddr[2]
 		@threads = []
+		@last_send = Time.now
 	end
 
 	def to_s
@@ -38,11 +41,14 @@ class Peer
 		@threads << Thread.new do
 			while true
 				# keep alive
-				sleep 5
-				mutex.synchronize do
-					data = [0].pack('L>')
-					puts "KEEP ALIVE message: #{data.inspect}"
-					@socket.print data
+				sleep 30
+				if Time.now.to_i - @last_send.to_i > 90
+					mutex.synchronize do
+						data = [0, 0, 0, 0].pack('C4')
+						@last_send = Time.now
+						puts "KEEP ALIVE message: #{data.inspect}"
+						@socket.print data
+					end
 				end
 			end
 		end
@@ -50,8 +56,8 @@ class Peer
 		@threads << Thread.new do
 			while true
 				sleep 2
-				puts "#{time} #{self} #{@socket.closed?}"
-				puts "#{time} #{self} THREADS_STATUS: #{@threads.map(&:status).inspect}"
+				puts "#{time} #{self} #{@socket.closed?}" if $logging
+				puts "#{time} #{self} THREADS_STATUS: #{@threads.map(&:status).inspect}" if $logging
 			end
 		end
 
@@ -59,7 +65,7 @@ class Peer
 			while true
 				mutex.synchronize do
 					piece = @torrent.get_piece_for_downloading(self) if @peer_choking == false && @downloading == false
-					puts "#{time}: PIECE for downloading: #{piece[:index].inspect}" if piece
+					puts "#{time} #{self} PIECE DL index: #{piece[:index].inspect}" if piece
 					send_piece_request(piece) if piece
 				end
 				sleep 1
@@ -74,7 +80,7 @@ class Peer
 				end
 				message_len = @socket.recv(4).unpack('L>')[0]
 				next if message_len.nil?
-				sleep 1 while @socket.nread < message_len
+				sleep 0.1 while @socket.nread < message_len
 				message = @socket.recv(message_len)
 				message_id, payload = message.unpack('Ca*')
 				puts "#{time} #{self} #{message_len} #{message_id} #{payload.unpack('C*')}"
@@ -113,7 +119,6 @@ class Peer
 					# cancel
 				else
 				end
-				sleep 0.1
 			end
 		end
 		puts "THREADS_SIZE= #{@threads.size.inspect}"
@@ -126,6 +131,7 @@ class Peer
 		mutex.synchronize do
 			bitfield_size = (@pieces.size/8.0).ceil
 			data = [ bitfield_size + 1, 5, [0]*bitfield_size].flatten
+			@last_send = Time.now
 			puts "BITFIELD message: #{data}"
 			@socket.print data.pack('L>C*')
 		end
@@ -152,6 +158,7 @@ class Peer
 	def send_unchoking
 		mutex.synchronize do
 			data = [1, 1].pack('L>C')
+			@last_send = Time.now
 			puts "UNCHOKE message: " + data.inspect
 			@socket.print data
 		end
@@ -160,6 +167,7 @@ class Peer
 	def send_interested
 		mutex.synchronize do
 			data = [1, 2].pack('L>C')
+			@last_send = Time.now
 			puts "INTERESTED message: " + data.inspect
 			@socket.print data
 		end
@@ -167,10 +175,11 @@ class Peer
 
 	def send_request piece
 		3.times do |i|
-			data = [13, 6, piece[:index], i*(2**15), 2**15]
+			data = [13, 6, piece[:index], i*(2**14), 2**14]
 			puts "REQUEST message: #{data.inspect}"
 			@socket.print data.pack('L>CL>3')
 		end
+		@last_send = Time.now
 	end
 
 	def time

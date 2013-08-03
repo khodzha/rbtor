@@ -44,7 +44,7 @@ class Torrent
 				t = x.unpack('CCCCS>')
 				host, port = t[0..3].join('.'), t[4]
 				begin
-					Timeout::timeout(10) do
+					Timeout::timeout(5) do
 						socket = TCPSocket.new(host, port)
 						handshake = [19].pack('C') + 'BitTorrent protocol' + [0].pack('Q') + @ben.info_hash.scan(/../).map(&:hex).pack('c*') + '-RB0001-000000000001'
 						socket.print handshake
@@ -65,7 +65,7 @@ class Torrent
 		threads.map &:join
 		puts 'total connections: ' + @peers.size.to_s
 		exit if @peers.size == 0
-		@pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0, index: index}; r}
+		@pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0, index: index, downloading: false}; r}
 		@peers.map(&:start).flatten.map &:join
 	end
 
@@ -80,12 +80,11 @@ class Torrent
 	end
 
 	def save_piece index, start, data
-		@mutex.synchronize do
-			@downloaded_pieces << @pieces[index]
-			File.open(@pieces[index][:hashsum].each_byte.map{ |b| b.to_s(16) }.join) do |f|
-				f.seek(start)
-				f.write(data)
-			end
+		puts "SAVE PIECE #{index} #{start}"
+		@downloaded_pieces << @pieces[index]
+		File.open(@pieces[index][:hashsum].each_byte.map{ |b| b.to_s(16) }.join) do |f|
+			f.seek(start)
+			f.write(data)
 		end
 	end
 
@@ -97,6 +96,8 @@ class Torrent
 	end
 
 	def get_piece_for_downloading peer
-		@pieces.select{|x| x[:peers].include?(peer)}.sort_by{|x| -x[:peers_have]}.first
+		piece = @pieces.select{|x| x[:peers].include?(peer) && x[:downloading] == false}.sort_by{|x| -x[:peers_have]}.first
+		piece[:downloading] = true
+		piece
 	end
 end
