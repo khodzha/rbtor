@@ -49,14 +49,15 @@ class Torrent
 						handshake = [19].pack('C') + 'BitTorrent protocol' + [0].pack('Q') + @ben.info_hash.scan(/../).map(&:hex).pack('c*') + '-RB0001-000000000001'
 						socket.print handshake
 						data = socket.recv 49+19
-						response = data.unpack 'CA19QC20C20'
+						response = data.unpack 'CA19Q>C20C20'
 						if response[0] == 19
+							puts response.inspect
 							@mutex.synchronize do
 								@peers << Peer.new(socket, @pieces, @piece_length, self)
 							end
 						end
 					end
-				rescue Errno::ECONNRESET, Errno::ECONNABORTED, Errno::ETIMEDOUT, Errno::ECONNREFUSED, Timeout::Error
+				rescue Errno::ECONNRESET, Errno::ECONNABORTED, Errno::ETIMEDOUT, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Timeout::Error
 					puts "#{host}:#{port} - failed"
 				end
 			end
@@ -65,7 +66,7 @@ class Torrent
 		puts 'total connections: ' + @peers.size.to_s
 		exit if @peers.size == 0
 		@pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0, index: index}; r}
-		@peers.map(&:start).flatten.map(&:join)
+		@peers.map(&:start).flatten.map &:join
 	end
 
 	def update_pieces peer, piece_index

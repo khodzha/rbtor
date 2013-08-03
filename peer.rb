@@ -34,11 +34,16 @@ class Peer
 		send_bitfield
 		send_interested
 		send_unchoking
+
 		@threads << Thread.new do
 			while true
 				# keep alive
-				sleep 120
-				@socket.print [0].pack('L')
+				sleep 5
+				mutex.synchronize do
+					data = [0].pack('L>')
+					puts "KEEP ALIVE message: #{data.inspect}"
+					@socket.print data
+				end
 			end
 		end
 
@@ -72,7 +77,7 @@ class Peer
 				sleep 1 while @socket.nread < message_len
 				message = @socket.recv(message_len)
 				message_id, payload = message.unpack('Ca*')
-				puts "#{time} #{self}\t#{message_len} #{message_id} #{payload.unpack('C*')}"
+				puts "#{time} #{self} #{message_len} #{message_id} #{payload.unpack('C*')}"
 				case message_id
 				when 0
 					@peer_choking = true
@@ -145,19 +150,23 @@ class Peer
 	end
 
 	def send_unchoking
-		data = [1, 1].pack('L>C')
-		puts "UNCHOKE message: " + data.inspect
-		@socket.print data
+		mutex.synchronize do
+			data = [1, 1].pack('L>C')
+			puts "UNCHOKE message: " + data.inspect
+			@socket.print data
+		end
 	end
 
 	def send_interested
-		data = [1, 2].pack('L>C')
-		puts "INTERESTED message: " + data.inspect
-		@socket.print data
+		mutex.synchronize do
+			data = [1, 2].pack('L>C')
+			puts "INTERESTED message: " + data.inspect
+			@socket.print data
+		end
 	end
 
 	def send_request piece
-		(@torrent.piece_length/(2**15.to_f)).ceil.times do |i|
+		3.times do |i|
 			data = [13, 6, piece[:index], i*(2**15), 2**15]
 			puts "REQUEST message: #{data.inspect}"
 			@socket.print data.pack('L>CL>3')
