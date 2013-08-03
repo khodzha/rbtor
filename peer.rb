@@ -127,7 +127,7 @@ class Peer
 			bitfield_size = (@pieces.size/8.0).ceil
 			data = [ bitfield_size + 1, 5, [0]*bitfield_size].flatten
 			puts "BITFIELD message: #{data}"
-			@socket.print data.pack('CL>C*')
+			@socket.print data.pack('L>C*')
 		end
 	end
 
