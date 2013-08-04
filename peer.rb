@@ -63,10 +63,14 @@ class Peer
 
 		@threads << Thread.new do
 			while true
-				mutex.synchronize do
-					piece = @torrent.get_piece_for_downloading(self) if @peer_choking == false && @downloading == false
-					puts "#{time} #{self} PIECE DL index: #{piece[:index].inspect}" if piece
-					send_piece_request(piece) if piece
+				if @peer_choking == false && @downloading == false
+					mutex.synchronize do
+						piece = @torrent.get_piece_for_downloading self
+						if piece
+							puts "#{time} #{self} PIECE DL index: #{piece[:index].inspect}"
+							send_piece_request piece
+						end
+					end
 				end
 				sleep 1
 			end
@@ -74,14 +78,15 @@ class Peer
 
 		@threads << Thread.new do
 			while true do
+				@socket.wait_readable
+				puts "#{time} #{self} bytes: #{@socket.nread.inspect}"
 				while @socket.nread < 4
-					puts "#{time} #{self} bytes: #{@socket.nread.inspect}"
 					sleep 1
 				end
 				message_len = @socket.recv(4).unpack('L>')[0]
 				next if message_len.nil?
-				sleep 0.1 while @socket.nread < message_len
-				message = @socket.recv(message_len)
+				puts "MESSAGE_LEN: #{message_len}"
+				message = receive_message message_len
 				message_id, payload = message.unpack('Ca*')
 				puts "#{time} #{self} #{message_len} #{message_id} #{payload.unpack('C*')}"
 				case message_id
@@ -184,5 +189,16 @@ class Peer
 
 	def time
 		Time.now.strftime('%T')+"\t"
+	end
+
+	def receive_message message_len
+		message = ''
+		while message_len > 0
+			@socket.wait_readable
+			buf = @socket.recv message_len
+			message_len -= buf.size
+			message << buf
+		end
+		message
 	end
 end
