@@ -79,13 +79,14 @@ class Torrent
 		end
 	end
 
-	def save_piece index, start, data
+	def save_piece peer, index, start, data
 		puts "SAVE PIECE #{index} #{start}"
 		@downloaded_pieces << @pieces[index]
 		File.open('./' + @pieces[index][:hashsum].each_byte.map{|b| "%02X"%b}.join + '.tmp', File::CREAT|File::BINARY|File::WRONLY) do |f|
 			f.seek(start)
 			f.write(data)
 		end
+		(@peers-[peer]).each{|x| x.send_have(index)}
 	end
 
 	def get_piece index, start, length

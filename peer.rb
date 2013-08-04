@@ -117,7 +117,7 @@ class Peer
 					# piece
 					mutex.synchronize do
 						index, start, data = payload.unpack('L>L>a*')
-						@torrent.save_piece index, start, data
+						@torrent.save_piece self, index, start, data
 						@downloading = false
 					end
 				when 8
@@ -128,6 +128,11 @@ class Peer
 		end
 		puts "THREADS_SIZE= #{@threads.size.inspect}"
 		@threads
+	end
+
+	def send_have index
+		data = [5, 4, piece[:index]].pack('L>CL>')
+		@socket.print data
 	end
 
 	private
