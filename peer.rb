@@ -7,6 +7,9 @@ class Peer
 	extend Forwardable
 	def_delegators :@torrent, :mutex
 
+	BLOCK_SIZE = 2**14
+	MAX_REQUESTS = 5
+
 	def initialize(socket, pieces, piece_length, torrent)
 		@socket = socket
 		@am_interested = false
@@ -17,10 +20,12 @@ class Peer
 		@pieces = pieces
 		@piece_length = piece_length
 		@torrent = torrent
-		@downloading = false
 		@peeraddr = @socket.peeraddr[2]
 		@threads = []
 		@last_send = Time.now
+
+		@downloading_piece = nil
+		@current_requests = 0
 	end
 
 	def to_s
@@ -63,11 +68,11 @@ class Peer
 
 		@threads << Thread.new do
 			while true
-				if @peer_choking == false && @downloading == false
-					piece = @torrent.get_piece_for_downloading self
-					if piece
-						puts "#{time} #{self} PIECE DL index: #{piece[:index].inspect}"
-						send_piece_request piece
+				if @peer_choking == false && ( @downloading_piece.nil? || @current_requests < MAX_REQUESTS )
+					@downloading_piece = @torrent.get_piece_for_downloading self unless @downloading_piece
+					if @downloading_piece
+						puts "#{time} #{self} PIECE DL index: #{@downloading_piece[:index].inspect}"
+						send_requests
 					end
 				end
 				sleep 1
@@ -114,7 +119,7 @@ class Peer
 					index, start, data = payload.unpack('L>L>a*')
 					mutex.synchronize do
 						@torrent.save_piece self, index, start, data
-						@downloading = false
+						@current_requests -= 1
 					end
 				when 8
 					# cancel
@@ -141,13 +146,6 @@ class Peer
 		data = [ bitfield_size + 1, 5, [0]*bitfield_size].flatten
 		puts "BITFIELD message: #{data}"
 		@socket.print data.pack('L>C*')
-	end
-
-	def send_piece_request piece
-		mutex.synchronize do
-			@downloading = true
-		end
-		send_request piece
 	end
 
 	def bitfield_to_array bitfield
@@ -181,13 +179,17 @@ class Peer
 		@socket.print data
 	end
 
-	def send_request piece
-		3.times do |i|
-			data = [13, 6, piece[:index], i*(2**14), 2**14]
-			puts "REQUEST message: #{data.inspect}"
-			@socket.print data.pack('L>CL>3')
-		end
+	def send_requests
 		mutex.synchronize do
+			(MAX_REQUESTS - @current_requests).times do |i|
+				index = @downloading_piece[:blocks_downloaded].find_index(nil)
+				@downloading_piece[:blocks_downloaded][index] = false
+				data = [13, 6, @downloading_piece[:index], index*BLOCK_SIZE, BLOCK_SIZE]
+				puts "REQUEST message: #{data.inspect}"
+				@socket.print data.pack('L>CL>3')
+			end
+
+			@current_requests = 5
 			@last_send = Time.now
 		end
 	end
