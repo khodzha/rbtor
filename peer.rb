@@ -68,7 +68,7 @@ class Peer
 
 		@threads << Thread.new do
 			while true
-				if @peer_choking == false && ( @downloading_piece.nil? || @current_requests < MAX_REQUESTS )
+				if @peer_choking == false && ( @downloading_piece.nil? || (@current_requests < MAX_REQUESTS && @downloading_piece[:blocks_downloaded].any?(&:nil?) ) )
 					@downloading_piece = @torrent.get_piece_for_downloading self unless @downloading_piece
 					if @downloading_piece
 						puts "#{time} #{self} PIECE DL index: #{@downloading_piece[:index].inspect}"
@@ -91,7 +91,7 @@ class Peer
 				puts "MESSAGE_LEN: #{message_len}"
 				message = receive_message message_len
 				message_id, payload = message.unpack('Ca*')
-				puts "#{time} #{self} #{message_len} #{message_id} #{payload.unpack('C*')}"
+				puts "#{time} #{self} #{message_len} #{message_id} #{payload.unpack('C*').take(40)}"
 				case message_id
 				when 0
 					@peer_choking = true
@@ -120,6 +120,7 @@ class Peer
 					mutex.synchronize do
 						@torrent.save_piece self, index, start, data
 						@current_requests -= 1
+						@downloading_piece = nil if @current_requests == 0 && @downloading_piece[:blocks_downloaded].all?
 					end
 				when 8
 					# cancel
@@ -183,13 +184,14 @@ class Peer
 		mutex.synchronize do
 			(MAX_REQUESTS - @current_requests).times do |i|
 				index = @downloading_piece[:blocks_downloaded].find_index(nil)
+				break if index.nil?
 				@downloading_piece[:blocks_downloaded][index] = false
 				data = [13, 6, @downloading_piece[:index], index*BLOCK_SIZE, BLOCK_SIZE]
 				puts "REQUEST message: #{data.inspect}"
 				@socket.print data.pack('L>CL>3')
+				@current_requests += 1
 			end
 
-			@current_requests = 5
 			@last_send = Time.now
 		end
 	end
