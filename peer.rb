@@ -44,11 +44,11 @@ class Peer
 				sleep 30
 				if Time.now.to_i - @last_send.to_i > 90
 					mutex.synchronize do
-						data = [0, 0, 0, 0].pack('C4')
 						@last_send = Time.now
-						puts "KEEP ALIVE message: #{data.inspect}"
-						@socket.print data
 					end
+					data = [0, 0, 0, 0].pack('C4')
+					puts "KEEP ALIVE message: #{data.inspect}"
+					@socket.print data
 				end
 			end
 		end
@@ -64,12 +64,10 @@ class Peer
 		@threads << Thread.new do
 			while true
 				if @peer_choking == false && @downloading == false
-					mutex.synchronize do
-						piece = @torrent.get_piece_for_downloading self
-						if piece
-							puts "#{time} #{self} PIECE DL index: #{piece[:index].inspect}"
-							send_piece_request piece
-						end
+					piece = @torrent.get_piece_for_downloading self
+					if piece
+						puts "#{time} #{self} PIECE DL index: #{piece[:index].inspect}"
+						send_piece_request piece
 					end
 				end
 				sleep 1
@@ -107,16 +105,14 @@ class Peer
 					bitfield_to_array payload
 				when 6
 					# request
-					mutex.synchronize do
-						index, start, length = payload.unpack('L>L>L>')
-						data = @torrent.get_piece(index, start, length)
-						puts "REQUEST response: " + data.inspect
-						@socket.print data
-					end
+					index, start, length = payload.unpack('L>L>L>')
+					data = @torrent.get_piece(index, start, length)
+					puts "REQUEST response: " + data.inspect
+					@socket.print data
 				when 7
 					# piece
+					index, start, data = payload.unpack('L>L>a*')
 					mutex.synchronize do
-						index, start, data = payload.unpack('L>L>a*')
 						@torrent.save_piece self, index, start, data
 						@downloading = false
 					end
@@ -131,7 +127,7 @@ class Peer
 	end
 
 	def send_have index
-		data = [5, 4, piece[:index]].pack('L>CL>')
+		data = [5, 4, index].pack('L>CL>')
 		@socket.print data
 	end
 
@@ -139,16 +135,18 @@ class Peer
 
 	def send_bitfield
 		mutex.synchronize do
-			bitfield_size = (@pieces.size/8.0).ceil
-			data = [ bitfield_size + 1, 5, [0]*bitfield_size].flatten
 			@last_send = Time.now
-			puts "BITFIELD message: #{data}"
-			@socket.print data.pack('L>C*')
 		end
+		bitfield_size = (@pieces.size/8.0).ceil
+		data = [ bitfield_size + 1, 5, [0]*bitfield_size].flatten
+		puts "BITFIELD message: #{data}"
+		@socket.print data.pack('L>C*')
 	end
 
 	def send_piece_request piece
-		@downloading = true
+		mutex.synchronize do
+			@downloading = true
+		end
 		send_request piece
 	end
 
@@ -167,20 +165,20 @@ class Peer
 
 	def send_unchoking
 		mutex.synchronize do
-			data = [1, 1].pack('L>C')
 			@last_send = Time.now
-			puts "UNCHOKE message: " + data.inspect
-			@socket.print data
 		end
+		data = [1, 1].pack('L>C')
+		puts "UNCHOKE message: " + data.inspect
+		@socket.print data
 	end
 
 	def send_interested
 		mutex.synchronize do
-			data = [1, 2].pack('L>C')
 			@last_send = Time.now
-			puts "INTERESTED message: " + data.inspect
-			@socket.print data
 		end
+		data = [1, 2].pack('L>C')
+		puts "INTERESTED message: " + data.inspect
+		@socket.print data
 	end
 
 	def send_request piece
@@ -189,7 +187,9 @@ class Peer
 			puts "REQUEST message: #{data.inspect}"
 			@socket.print data.pack('L>CL>3')
 		end
-		@last_send = Time.now
+		mutex.synchronize do
+			@last_send = Time.now
+		end
 	end
 
 	def time

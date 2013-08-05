@@ -97,8 +97,12 @@ class Torrent
 	end
 
 	def get_piece_for_downloading peer
-		piece = @pieces.select{|x| x[:peers].include?(peer) && x[:downloading] == false}.sort_by{|x| -x[:peers_have]}.first
-		piece[:downloading] = true
+		piece = nil
+		@mutex.synchronize do
+			piece = @pieces.select{|x| x[:peers].include?(peer) && x[:downloading] == false}.sort_by{|x| -x[:peers_have]}.first
+			piece[:downloading] = true
+		end
+		puts "PIECE INSPECT: #{piece.inspect}"
 		piece
 	end
 end
