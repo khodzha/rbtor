@@ -73,7 +73,7 @@ class Torrent
 
 		@pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0, index: index, downloading: false}; r}
 		@pieces.each do |piece|
-			piece[:blocks_downloaded] = [nil] * ( @piece_length.to_f / Peer::BLOCK_SIZE ).ceil
+			piece[:blocks_downloaded] = [:not_downloaded] * ( @piece_length.to_f / Peer::BLOCK_SIZE ).ceil
 		end
 
 		@peers.map(&:start).flatten.map &:join
@@ -94,8 +94,8 @@ class Torrent
 		piece = @pieces[index]
 		block_index = start / Peer::BLOCK_SIZE
 
-		piece[:blocks_downloaded][block_index] = true
-		piece_downloaded = piece[:blocks_downloaded].any?{|x| !x}
+		piece[:blocks_downloaded][block_index] = :downloaded
+		piece_downloaded = piece[:blocks_downloaded].any?{|x| x != :downloaded}
 
 		File.open('./tmp/' + @pieces[index][:hashsum].each_byte.map{|b| "%02X"%b}.join + '.tmp', File::CREAT|File::BINARY|File::WRONLY) do |f|
 			f.seek(start)
@@ -121,5 +121,14 @@ class Torrent
 		end
 		puts "PIECE INSPECT: #{piece.inspect}"
 		piece
+	end
+
+	def remove_peer peer
+		@pieces.select{|x| x[:peers].include?(peer)}.each do |piece|
+			piece[:peers].delete(peer)
+			piece[:peers_have] -= 1
+			piece[:blocks_downloaded].map!{|x| x == (:in_progress ? :not_downloaded : x)}
+		end
+		@peers.delete(peer)
 	end
 end

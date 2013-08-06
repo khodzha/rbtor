@@ -23,9 +23,10 @@ class Peer
 		@peeraddr = @socket.peeraddr[2]
 		@threads = []
 		@last_send = Time.now
-
+		@last_receive = Time.now
 		@downloading_piece = nil
 		@current_requests = 0
+		@shutdown_flag = false
 	end
 
 	def to_s
@@ -44,7 +45,7 @@ class Peer
 		send_unchoking
 
 		@threads << Thread.new do
-			while true
+			until @shutdown_flag
 				# keep alive
 				sleep 30
 				if Time.now.to_i - @last_send.to_i > 90
@@ -55,11 +56,21 @@ class Peer
 					puts "KEEP ALIVE message: #{data.inspect}"
 					@socket.print data
 				end
+				if Time.now.to_i - @last_receive.to_i > 180
+					mutex.synchronize do
+						@current_requests = nil
+						@downloading_piece[:downloading] = false if @downloading_piece
+						@downloading_piece = nil
+						@torrent.remove_peer self
+						@shutdown_flag = true
+						@socket.close
+					end
+				end
 			end
 		end
 
 		@threads << Thread.new do
-			while true
+			until @shutdown_flag
 				sleep 2
 				puts "#{time} #{self} #{@socket.closed?}" if $logging
 				puts "#{time} #{self} THREADS_STATUS: #{@threads.map(&:status).inspect}" if $logging
@@ -67,12 +78,14 @@ class Peer
 		end
 
 		@threads << Thread.new do
-			while true
-				if @peer_choking == false && ( @downloading_piece.nil? || (@current_requests < MAX_REQUESTS && @downloading_piece[:blocks_downloaded].any?(&:nil?) ) )
-					@downloading_piece = @torrent.get_piece_for_downloading self unless @downloading_piece
-					if @downloading_piece
-						puts "#{time} #{self} PIECE DL index: #{@downloading_piece[:index].inspect}"
-						send_requests
+			until @shutdown_flag
+				if @peer_choking == false
+					if @downloading_piece.nil? || ( @current_requests < MAX_REQUESTS && @downloading_piece[:blocks_downloaded].any?{|x| x == :not_downloaded} )
+						@downloading_piece = @torrent.get_piece_for_downloading self unless @downloading_piece
+						if @downloading_piece
+							puts "#{time} #{self} PIECE DL index: #{@downloading_piece[:index].inspect}"
+							send_requests
+						end
 					end
 				end
 				sleep 1
@@ -80,7 +93,7 @@ class Peer
 		end
 
 		@threads << Thread.new do
-			while true do
+			until @shutdown_flag
 				@socket.wait_readable
 				puts "#{time} #{self} bytes: #{@socket.nread.inspect}"
 				while @socket.nread < 4
@@ -120,7 +133,7 @@ class Peer
 					mutex.synchronize do
 						@torrent.save_piece self, index, start, data
 						@current_requests -= 1
-						@downloading_piece = nil if @current_requests == 0 && @downloading_piece[:blocks_downloaded].all?
+						@downloading_piece = nil if @current_requests == 0 && @downloading_piece[:blocks_downloaded].all?{|x| x == :downloaded}
 					end
 				when 8
 					# cancel
@@ -183,9 +196,9 @@ class Peer
 	def send_requests
 		mutex.synchronize do
 			(MAX_REQUESTS - @current_requests).times do |i|
-				index = @downloading_piece[:blocks_downloaded].find_index(nil)
+				index = @downloading_piece[:blocks_downloaded].find_index(:not_downloaded)
 				break if index.nil?
-				@downloading_piece[:blocks_downloaded][index] = false
+				@downloading_piece[:blocks_downloaded][index] = :in_progress
 				data = [13, 6, @downloading_piece[:index], index*BLOCK_SIZE, BLOCK_SIZE]
 				puts "REQUEST message: #{data.inspect}"
 				@socket.print data.pack('L>CL>3')
@@ -208,6 +221,7 @@ class Peer
 			message_len -= buf.size
 			message << buf
 		end
+		@last_receive = Time.now
 		message
 	end
 end
