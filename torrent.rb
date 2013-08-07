@@ -116,7 +116,7 @@ class Torrent
 	def get_piece_for_downloading peer
 		piece = nil
 		@mutex.synchronize do
-			piece = @pieces.select{|x| x[:peers].include?(peer) && x[:downloading] == false}.sort_by{|x| -x[:peers_have]}.first
+			piece = (@pieces - @downloaded_pieces).select{|x| x[:peers].include?(peer) && x[:downloading] == false}.sort_by{|x| -x[:peers_have]}.first
 			piece[:downloading] = true if piece
 		end
 		puts "PIECE INSPECT: #{piece.inspect}"
