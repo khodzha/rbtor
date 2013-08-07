@@ -107,6 +107,9 @@ class Torrent
     if piece_downloaded && validate_sha(filename)
       @downloaded_pieces << @pieces[index]
       (@peers-[peer]).each{|x| x.send_have(index)}
+    elsif piece_downloaded
+      piece[:blocks_downloaded] = [:not_downloaded] * ( @piece_length.to_f / Peer::BLOCK_SIZE ).ceil
+      piece[:downloading] = false
     end
 
     if @downloaded_pieces == @pieces
@@ -154,9 +157,7 @@ class Torrent
   end
 
   def validate_sha filename
-    if Digest::SHA1.file(filename).hexdigest == File.basename(filename, '.tmp')
-      piece[:blocks_downloaded] = [:not_downloaded] * ( @piece_length.to_f / Peer::BLOCK_SIZE ).ceil
-      piece[:downloading] = false
+    if Digest::SHA1.file(filename).hexdigest != File.basename(filename, '.tmp')
       FileUtils.rm_f filename
       false
     else
