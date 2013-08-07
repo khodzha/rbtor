@@ -2,6 +2,7 @@ require 'net/http'
 require 'socket'
 require 'thread'
 require 'timeout'
+require 'fileutils'
 
 require './bencode'
 require './peer'
