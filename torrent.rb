@@ -104,6 +104,12 @@ class Torrent
 
     @downloaded_pieces << @pieces[index]
     (@peers-[peer]).each{|x| x.send_have(index)} if piece_downloaded
+
+    if @downloaded_pieces == @pieces
+      Thread.new do
+        join_pieces
+      end
+    end
   end
 
   def get_piece index, start, length
@@ -130,5 +136,16 @@ class Torrent
       piece[:blocks_downloaded].map!{|x| x == (:in_progress ? :not_downloaded : x)}
     end
     @peers.delete(peer)
+  end
+
+  private
+
+  def join_pieces
+    File.open('./' + @data[:info][:name]) do |f|
+      @pieces.each do |piece|
+        file_name = './tmp/' + @pieces[index][:hashsum].each_byte.map{|b| "%02x"%b}.join + '.tmp'
+        f.print File.read(file_name)
+      end
+    end
   end
 end
