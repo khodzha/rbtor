@@ -156,7 +156,7 @@ class Torrent
   end
 
   def validate_sha filename, piece
-    if piece[:hashsum] != Digest::SHA1.hexdigest(File.open(filename))
+    if piece[:hashsum] != Digest::SHA1.hexdigest(File.read(filename))
       piece[:blocks_downloaded] = [:not_downloaded] * ( @piece_length.to_f / Peer::BLOCK_SIZE ).ceil
       piece[:downloading] = false
       FileUtils.rm_f filename
