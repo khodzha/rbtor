@@ -97,13 +97,19 @@ class Torrent
     piece[:blocks_downloaded][block_index] = :downloaded
     piece_downloaded = piece[:blocks_downloaded].any?{|x| x != :downloaded}
 
-    File.open('./tmp/' + @pieces[index][:hashsum].each_byte.map{|b| "%02X"%b}.join + '.tmp', File::CREAT|File::BINARY|File::WRONLY) do |f|
+    filename = './tmp/' + @pieces[index][:hashsum].each_byte.map{|b| "%02X"%b}.join + '.tmp'
+    File.open(filename, File::CREAT|File::BINARY|File::WRONLY) do |f|
       f.seek(start)
       f.write(data)
     end
 
-    @downloaded_pieces << @pieces[index]
-    (@peers-[peer]).each{|x| x.send_have(index)} if piece_downloaded
+    piece_downloaded &&= validate_sha filename, piece
+
+    if piece_downloaded
+
+      @downloaded_pieces << @pieces[index]
+      (@peers-[peer]).each{|x| x.send_have(index)}
+    end
 
     if @downloaded_pieces == @pieces
       Thread.new do
@@ -147,5 +153,15 @@ class Torrent
         f.print File.read(file_name)
       end
     end
+  end
+
+  def validate_sha filename, piece
+    if piece[:hashsum] != Digest::SHA1.hexdigest(File.open(filename))
+      piece[:blocks_downloaded] = [:not_downloaded] * ( @piece_length.to_f / Peer::BLOCK_SIZE ).ceil
+      piece[:downloading] = false
+      FileUtils.rm_f filename
+      false
+    end
+    true
   end
 end
