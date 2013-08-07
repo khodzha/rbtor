@@ -91,23 +91,20 @@ class Torrent
   end
 
   def save_piece peer, index, start, data
-    puts "SAVE PIECE #{index} #{start}"
+    puts "SAVE PIECE #{index} #{start}" if false
     piece = @pieces[index]
     block_index = start / Peer::BLOCK_SIZE
 
     piece[:blocks_downloaded][block_index] = :downloaded
-    piece_downloaded = piece[:blocks_downloaded].any?{|x| x != :downloaded}
+    piece_downloaded = piece[:blocks_downloaded].all?{|x| x == :downloaded}
 
-    filename = './tmp/' + @pieces[index][:hashsum].each_byte.map{|b| "%02X"%b}.join + '.tmp'
+    filename = './tmp/' + @pieces[index][:hashsum].each_byte.map{|b| "%02x"%b}.join + '.tmp'
     File.open(filename, File::CREAT|File::BINARY|File::WRONLY) do |f|
       f.seek(start)
       f.write(data)
     end
 
-    piece_downloaded &&= validate_sha filename, piece
-
-    if piece_downloaded
-
+    if piece_downloaded && validate_sha(filename)
       @downloaded_pieces << @pieces[index]
       (@peers-[peer]).each{|x| x.send_have(index)}
     end
@@ -132,7 +129,7 @@ class Torrent
       piece = (@pieces - @downloaded_pieces).select{|x| x[:peers].include?(peer) && x[:downloading] == false}.sort_by{|x| -x[:peers_have]}.first
       piece[:downloading] = true if piece
     end
-    puts "PIECE INSPECT: #{piece.inspect}"
+    puts "PIECE INSPECT: #{piece.inspect}" if false
     piece
   end
 
@@ -156,13 +153,14 @@ class Torrent
     end
   end
 
-  def validate_sha filename, piece
-    if piece[:hashsum] != Digest::SHA1.hexdigest(File.read(filename))
+  def validate_sha filename
+    if Digest::SHA1.file(filename).hexdigest == File.basename(filename, '.tmp')
       piece[:blocks_downloaded] = [:not_downloaded] * ( @piece_length.to_f / Peer::BLOCK_SIZE ).ceil
       piece[:downloading] = false
       FileUtils.rm_f filename
       false
+    else
+      true
     end
-    true
   end
 end

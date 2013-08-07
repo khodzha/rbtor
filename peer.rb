@@ -53,7 +53,7 @@ class Peer
             @last_send = Time.now
           end
           data = [0, 0, 0, 0].pack('C4')
-          puts "KEEP ALIVE message: #{data.inspect}"
+          puts "KEEP ALIVE message: #{data.inspect}" if $logging
           @socket.print data
         end
         if Time.now.to_i - @last_receive.to_i > 180
@@ -83,7 +83,7 @@ class Peer
           if @downloading_piece.nil? || ( @current_requests < MAX_REQUESTS && @downloading_piece[:blocks_downloaded].any?{|x| x == :not_downloaded} )
             @downloading_piece = @torrent.get_piece_for_downloading self unless @downloading_piece
             if @downloading_piece
-              puts "#{time} #{self} PIECE DL index: #{@downloading_piece[:index].inspect}"
+              puts "#{time} #{self} PIECE DL index: #{@downloading_piece[:index].inspect}" if $logging
               send_requests
             end
           end
@@ -95,16 +95,16 @@ class Peer
     @threads << Thread.new do
       until @shutdown_flag
         @socket.wait_readable
-        puts "#{time} #{self} bytes: #{@socket.nread.inspect}"
+        puts "#{time} #{self} bytes: #{@socket.nread.inspect}" if $logging
         while @socket.nread < 4
           sleep 1
         end
         message_len = @socket.recv(4).unpack('L>')[0]
         next if message_len.nil?
-        puts "MESSAGE_LEN: #{message_len}"
+        puts "MESSAGE_LEN: #{message_len}" if $logging
         message = receive_message message_len
         message_id, payload = message.unpack('Ca*')
-        puts "#{time} #{self} #{message_len} #{message_id} #{payload.unpack('C*').take(40)}"
+        puts "#{time} #{self} #{message_len} #{message_id} #{payload.unpack('C*').take(40)}" if $logging
         case message_id
         when 0
           @peer_choking = true
@@ -125,7 +125,7 @@ class Peer
           # request
           index, start, length = payload.unpack('L>L>L>')
           data = @torrent.get_piece(index, start, length)
-          puts "REQUEST response: " + data.inspect
+          puts "REQUEST response: " + data.inspect if $logging
           @socket.print data
         when 7
           # piece
@@ -141,7 +141,7 @@ class Peer
         end
       end
     end
-    puts "THREADS_SIZE= #{@threads.size.inspect}"
+    puts "THREADS_SIZE= #{@threads.size.inspect}" if $logging
     @threads
   end
 
@@ -158,7 +158,7 @@ class Peer
     end
     bitfield_size = (@pieces.size/8.0).ceil
     data = [ bitfield_size + 1, 5, [0]*bitfield_size].flatten
-    puts "BITFIELD message: #{data}"
+    puts "BITFIELD message: #{data}" if $logging
     @socket.print data.pack('L>C*')
   end
 
@@ -180,7 +180,7 @@ class Peer
       @last_send = Time.now
     end
     data = [1, 1].pack('L>C')
-    puts "UNCHOKE message: " + data.inspect
+    puts "UNCHOKE message: #{data.inspect}" if $logging
     @socket.print data
   end
 
@@ -189,7 +189,7 @@ class Peer
       @last_send = Time.now
     end
     data = [1, 2].pack('L>C')
-    puts "INTERESTED message: " + data.inspect
+    puts "INTERESTED message: #{data.inspect}" if $logging
     @socket.print data
   end
 
@@ -200,7 +200,7 @@ class Peer
         break if index.nil?
         @downloading_piece[:blocks_downloaded][index] = :in_progress
         data = [13, 6, @downloading_piece[:index], index*BLOCK_SIZE, BLOCK_SIZE]
-        puts "REQUEST message: #{data.inspect}"
+        puts "REQUEST message: #{data.inspect}" if $logging
         @socket.print data.pack('L>CL>3')
         @current_requests += 1
       end
