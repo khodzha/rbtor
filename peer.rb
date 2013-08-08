@@ -58,12 +58,7 @@ class Peer
         end
         if Time.now.to_i - @last_receive.to_i > 180
           mutex.synchronize do
-            @current_requests = nil
-            @downloading_piece[:downloading] = false if @downloading_piece
-            @downloading_piece = nil
-            @torrent.remove_peer self
-            @shutdown_flag = true
-            @socket.close
+            exit
           end
         end
       end
@@ -99,10 +94,15 @@ class Peer
         while @socket.nread < 4
           sleep 1
         end
-        message_len = @socket.recv(4).unpack('L>')[0]
-        next if message_len.nil?
-        puts "MESSAGE_LEN: #{message_len}" if $logging
-        message = receive_message message_len
+        begin
+          message_len = @socket.recv(4).unpack('L>')[0]
+          next if message_len.nil?
+          puts "MESSAGE_LEN: #{message_len}" if $logging
+          message = receive_message message_len
+        rescue
+          exit
+          break
+        end
         message_id, payload = message.unpack('Ca*')
         puts "#{time} #{self} #{message_len} #{message_id} #{payload.unpack('C*').take(40)}" if $logging
         case message_id
@@ -223,5 +223,14 @@ class Peer
     end
     @last_receive = Time.now
     message
+  end
+
+  def exit
+    @current_requests = nil
+    @downloading_piece[:downloading] = false if @downloading_piece
+    @downloading_piece = nil
+    @torrent.remove_peer self
+    @shutdown_flag = true
+    @socket.close
   end
 end
