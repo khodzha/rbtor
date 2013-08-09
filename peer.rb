@@ -231,7 +231,11 @@ class Peer
     @downloading_piece = nil
     @torrent.remove_peer self
     @shutdown_flag = true
-    @socket.close
+    begin
+      @socket.close
+    rescue IOError
+      puts ''
+    end
   end
 
   def send data
