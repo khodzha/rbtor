@@ -54,7 +54,7 @@ class Peer
           end
           data = [0, 0, 0, 0].pack('C4')
           puts "KEEP ALIVE message: #{data.inspect}" if $logging
-          @socket.print data
+          send data
         end
         if Time.now.to_i - @last_receive.to_i > 180
           mutex.synchronize do
@@ -126,7 +126,7 @@ class Peer
           index, start, length = payload.unpack('L>L>L>')
           data = @torrent.get_piece(index, start, length)
           puts "REQUEST response: " + data.inspect if $logging
-          @socket.print data
+          send data
         when 7
           # piece
           index, start, data = payload.unpack('L>L>a*')
@@ -147,7 +147,7 @@ class Peer
 
   def send_have index
     data = [5, 4, index].pack('L>CL>')
-    @socket.print data
+    send data
   end
 
   private
@@ -159,7 +159,7 @@ class Peer
     bitfield_size = (@pieces.size/8.0).ceil
     data = [ bitfield_size + 1, 5, [0]*bitfield_size].flatten
     puts "BITFIELD message: #{data}" if $logging
-    @socket.print data.pack('L>C*')
+    send data.pack('L>C*')
   end
 
   def bitfield_to_array bitfield
@@ -181,7 +181,7 @@ class Peer
     end
     data = [1, 1].pack('L>C')
     puts "UNCHOKE message: #{data.inspect}" if $logging
-    @socket.print data
+    send data
   end
 
   def send_interested
@@ -190,7 +190,7 @@ class Peer
     end
     data = [1, 2].pack('L>C')
     puts "INTERESTED message: #{data.inspect}" if $logging
-    @socket.print data
+    send data
   end
 
   def send_requests
@@ -201,7 +201,7 @@ class Peer
         @downloading_piece[:blocks_downloaded][index] = :in_progress
         data = [13, 6, @downloading_piece[:index], index*BLOCK_SIZE, BLOCK_SIZE]
         puts "REQUEST message: #{data.inspect}" if $logging
-        @socket.print data.pack('L>CL>3')
+        send data.pack('L>CL>3')
         @current_requests += 1
       end
 
@@ -232,5 +232,13 @@ class Peer
     @torrent.remove_peer self
     @shutdown_flag = true
     @socket.close
+  end
+
+  def send data
+    begin
+      @socket.print data
+    rescue
+      exit
+    end
   end
 end
