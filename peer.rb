@@ -89,12 +89,12 @@ class Peer
 
     @threads << Thread.new do
       until @shutdown_flag
-        @socket.wait_readable
-        puts "#{time} #{self} bytes: #{@socket.nread.inspect}" if $logging
-        while @socket.nread < 4
-          sleep 1
-        end
         begin
+          @socket.wait_readable
+          puts "#{time} #{self} bytes: #{@socket.nread.inspect}" if $logging
+          while @socket.nread < 4
+            sleep 1
+          end
           message_len = @socket.recv(4).unpack('L>')[0]
           next if message_len.nil?
           puts "MESSAGE_LEN: #{message_len}" if $logging
