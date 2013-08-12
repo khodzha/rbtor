@@ -120,7 +120,6 @@ class Torrent
 
     if piece_downloaded && validate_sha(filename)
       @downloaded_pieces << @pieces[index]
-      (@peers-[peer]).each{|x| x.send_have(index)}
     elsif piece_downloaded
       piece[:blocks_downloaded] = [:not_downloaded] * ( @piece_length.to_f / Peer::BLOCK_SIZE ).ceil
       piece[:downloading] = false
@@ -131,6 +130,10 @@ class Torrent
         join_pieces
       end
     end
+  end
+
+  def announce_have except_peer
+    (@peers-[except_peer]).each{|x| x.send_have(index)}
   end
 
   def get_piece index, start, length
