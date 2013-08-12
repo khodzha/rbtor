@@ -192,17 +192,21 @@ class Peer
   end
 
   def send_requests
-    mutex.synchronize do
-      (MAX_REQUESTS - @current_requests).times do |i|
-        index = @downloading_piece[:blocks_downloaded].find_index(:not_downloaded)
-        break if index.nil?
+    (MAX_REQUESTS - @current_requests).times do |i|
+      index = @downloading_piece[:blocks_downloaded].find_index(:not_downloaded)
+      break if index.nil?
+      mutex.synchronize do
         @downloading_piece[:blocks_downloaded][index] = :in_progress
-        data = [13, 6, @downloading_piece[:index], index*BLOCK_SIZE, BLOCK_SIZE]
-        puts "REQUEST message: #{data.inspect}" if $logging
-        send data.pack('L>CL>3')
+      end
+      data = [13, 6, @downloading_piece[:index], index*BLOCK_SIZE, BLOCK_SIZE]
+      puts "REQUEST message: #{data.inspect}" if $logging
+      send data.pack('L>CL>3')
+      mutex.synchronize do
         @current_requests += 1
       end
+    end
 
+    mutex.synchronize do
       @last_send = Time.now
     end
   end
