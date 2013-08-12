@@ -1,7 +1,7 @@
 require 'io/wait'
 require 'forwardable'
 
-$logging = false
+$logging = true
 
 class Peer
   extend Forwardable
@@ -57,9 +57,7 @@ class Peer
           send data
         end
         if Time.now.to_i - @last_receive.to_i > 180
-          mutex.synchronize do
-            exit
-          end
+          exit
         end
       end
     end
@@ -226,15 +224,17 @@ class Peer
   end
 
   def exit
-    @current_requests = nil
-    @downloading_piece[:downloading] = false if @downloading_piece
-    @downloading_piece = nil
-    @torrent.remove_peer self
-    @shutdown_flag = true
-    begin
-      @socket.close
-    rescue IOError
-      puts ''
+    mutex.synchronize do
+      @current_requests = nil
+      @downloading_piece[:downloading] = false if @downloading_piece
+      @downloading_piece = nil
+      @torrent.remove_peer self, @peeraddr
+      @shutdown_flag = true
+      begin
+        @socket.close
+      rescue IOError
+        puts 'Socket closing failed'
+      end
     end
   end
 
