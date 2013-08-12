@@ -133,7 +133,7 @@ class Peer
             @current_requests -= 1
             @downloading_piece = nil if @current_requests == 0 && @downloading_piece[:blocks_downloaded].all?{|x| x == :downloaded}
           end
-          @torrent.announce_have self
+          @torrent.announce_have self, index
         when 8
           # cancel
         else

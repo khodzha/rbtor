@@ -132,7 +132,7 @@ class Torrent
     end
   end
 
-  def announce_have except_peer
+  def announce_have except_peer, index
     (@peers-[except_peer]).each{|x| x.send_have(index)}
   end
 
