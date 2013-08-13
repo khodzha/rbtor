@@ -35,6 +35,13 @@ class Torrent
   end
 
   def start
+    Thread.new do
+      loop do
+        puts eval(gets.chomp).inspect
+        sleep 1
+      end
+    end
+
     new_peers = []
     threads = []
 
@@ -60,7 +67,6 @@ class Torrent
       tracker_ben = Bencode.new StringIO.new(res)
       @tracker_data = tracker_ben.decode
 
-      puts @tracker_data[:peers][0, 60].unpack('C*').each_slice(6).inspect
       @tracker_data[:peers][0, 60].unpack('C*').each_slice(6).each_with_index do |x, i|
         threads << Thread.new do
           host, port = x[0..3].join('.'), ((x[4]<<8)+x[5]).to_s
@@ -159,7 +165,7 @@ class Torrent
     @pieces.select{|x| x[:peers].include?(peer)}.each do |piece|
       piece[:peers].delete(peer)
       piece[:peers_have] -= 1
-      piece[:blocks_downloaded].map!{|x| x == (:in_progress ? :not_downloaded : x)}
+      piece[:blocks_downloaded].map!{|x| (x == :in_progress ? :not_downloaded : x)}
     end
     @peers.delete(peer)
     @hosts.delete(host)
