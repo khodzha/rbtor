@@ -52,14 +52,18 @@ class Torrent
       @uri.query = URI.encode_www_form params
 
       puts "Connecting to #{@uri.host}"
-      res = Net::HTTP.get_response(@uri).body
+      begin
+        res = Net::HTTP.get_response(@uri).body
+      rescue Errno::ETIMEDOUT
+        redo
+      end
       tracker_ben = Bencode.new StringIO.new(res)
       @tracker_data = tracker_ben.decode
 
-      @tracker_data[:peers].scan(/.{6}/).take(10).each_with_index do |x, i|
+      puts @tracker_data[:peers][0, 60].unpack('C*').each_slice(6).inspect
+      @tracker_data[:peers][0, 60].unpack('C*').each_slice(6).each_with_index do |x, i|
         threads << Thread.new do
-          t = x.unpack('CCCCS>')
-          host, port = t[0..3].join('.'), t[4]
+          host, port = x[0..3].join('.'), ((x[4]<<8)+x[5]).to_s
           unless @hosts.include? host
             @hosts << host
             begin
@@ -70,15 +74,17 @@ class Torrent
                 data = socket.recv 49+19
                 response = data.unpack 'CA19Q>C20C20'
                 if response[0] == 19
-                  puts response.inspect
                   @mutex.synchronize do
                     new_peers << Peer.new(socket, @pieces, @piece_length, self)
                   end
                 end
               end
-            rescue Errno::ECONNRESET, Errno::ECONNABORTED, Errno::ETIMEDOUT, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Timeout::Error
+            rescue Errno::ECONNRESET, Errno::ECONNABORTED, Errno::ETIMEDOUT, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH, 
+                    Errno::EADDRNOTAVAIL, Timeout::Error
               puts "#{host}:#{port} - failed"
             end
+          else
+            puts "#{host}:#{port} - was there"
           end
         end
       end
@@ -92,6 +98,8 @@ class Torrent
 
       sleep 60*5
     end
+
+    join_pieces
   end
 
   def update_pieces peer, piece_index
@@ -123,12 +131,6 @@ class Torrent
     elsif piece_downloaded
       piece[:blocks_downloaded] = [:not_downloaded] * ( @piece_length.to_f / Peer::BLOCK_SIZE ).ceil
       piece[:downloading] = false
-    end
-
-    if @downloaded_pieces == @pieces
-      Thread.new do
-        join_pieces
-      end
     end
   end
 

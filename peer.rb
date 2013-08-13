@@ -1,7 +1,7 @@
 require 'io/wait'
 require 'forwardable'
 
-$logging = true
+$logging = false
 
 class Peer
   extend Forwardable
@@ -53,20 +53,11 @@ class Peer
             @last_send = Time.now
           end
           data = [0, 0, 0, 0].pack('C4')
-          puts "KEEP ALIVE message: #{data.inspect}" if $logging
           send data
         end
         if Time.now.to_i - @last_receive.to_i > 180
           exit
         end
-      end
-    end
-
-    @threads << Thread.new do
-      until @shutdown_flag
-        sleep 2
-        puts "#{time} #{self} #{@socket.closed?}" if $logging
-        puts "#{time} #{self} THREADS_STATUS: #{@threads.map(&:status).inspect}" if $logging
       end
     end
 
@@ -237,7 +228,9 @@ class Peer
       @shutdown_flag = true
       begin
         @socket.close
-      rescue IOError
+      rescue IOError => e
+        puts e.message
+        puts e.backtrace.inspect
         puts 'Socket closing failed'
       end
     end
