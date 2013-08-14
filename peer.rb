@@ -221,7 +221,7 @@ class Peer
 
   def exit
     mutex.synchronize do
-      @current_requests = nil
+      @current_requests = 0
       @downloading_piece[:downloading] = false if @downloading_piece
       @downloading_piece = nil
       @torrent.remove_peer self, @peeraddr

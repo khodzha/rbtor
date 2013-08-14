@@ -71,7 +71,6 @@ class Torrent
         threads << Thread.new do
           host, port = x[0..3].join('.'), ((x[4]<<8)+x[5]).to_s
           unless @hosts.include? host
-            @hosts << host
             begin
               Timeout::timeout(5) do
                 socket = TCPSocket.new(host, port)
@@ -82,6 +81,7 @@ class Torrent
                 if response[0] == 19
                   @mutex.synchronize do
                     new_peers << Peer.new(socket, @pieces, @piece_length, self)
+                    @hosts << host
                   end
                 end
               end
@@ -119,7 +119,7 @@ class Torrent
   end
 
   def save_piece peer, index, start, data
-    puts "SAVE PIECE #{index} #{start}" if false
+    puts "SAVE PIECE #{index} #{start}"
     piece = @pieces[index]
     block_index = start / Peer::BLOCK_SIZE
 
@@ -162,6 +162,7 @@ class Torrent
   end
 
   def remove_peer peer, host
+    puts "HOST REMOVAL: #{host.inspect}, #{@hosts.index(host).inspect}"
     @pieces.select{|x| x[:peers].include?(peer)}.each do |piece|
       piece[:peers].delete(peer)
       piece[:peers_have] -= 1
