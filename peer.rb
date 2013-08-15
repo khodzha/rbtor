@@ -221,9 +221,7 @@ class Peer
 
   def exit
     mutex.synchronize do
-      @current_requests = 0
       @downloading_piece[:downloading] = false if @downloading_piece
-      @downloading_piece = nil
       @torrent.remove_peer self, @peeraddr
       @shutdown_flag = true
       begin
@@ -232,6 +230,9 @@ class Peer
         puts e.message
         puts e.backtrace.inspect
         puts 'Socket closing failed'
+      ensure
+        @threads.delete Thread.current
+        @threads.each &:kill
       end
     end
   end
