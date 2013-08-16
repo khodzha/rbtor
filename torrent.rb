@@ -45,7 +45,7 @@ class Torrent
     new_peers = []
     threads = []
 
-    @pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0, index: index, downloading: false}; r}
+    @pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0, index: index, state: :pending}; r}
     @pieces.each do |piece|
       piece[:blocks_downloaded] = [:not_downloaded] * ( @piece_length.to_f / Peer::BLOCK_SIZE ).ceil
     end
@@ -70,7 +70,7 @@ class Torrent
       @tracker_data[:peers][0, 60].unpack('C*').each_slice(6).each_with_index do |x, i|
         threads << Thread.new do
           host, port = x[0..3].join('.'), ((x[4]<<8)+x[5]).to_s
-          unless @hosts.include? host || @hosts.size > 10
+          unless @hosts.include?(host) || @hosts.size > 10
             begin
               Timeout::timeout(5) do
                 socket = TCPSocket.new(host, port)
@@ -102,7 +102,7 @@ class Torrent
       @peers.concat new_peers
       new_peers.clear
 
-      sleep 60*@peers.size
+      sleep 60*@hosts.size
     end
 
     join_pieces
@@ -136,7 +136,7 @@ class Torrent
       @downloaded_pieces << @pieces[index]
     elsif piece_downloaded
       piece[:blocks_downloaded] = [:not_downloaded] * ( @piece_length.to_f / Peer::BLOCK_SIZE ).ceil
-      piece[:downloading] = false
+      piece[:state] = :downloaded
     end
   end
 
@@ -154,8 +154,8 @@ class Torrent
   def get_piece_for_downloading peer
     piece = nil
     @mutex.synchronize do
-      piece = (@pieces - @downloaded_pieces).select{|x| x[:peers].include?(peer) && x[:downloading] == false}.sort_by{|x| -x[:peers_have]}.first
-      piece[:downloading] = true if piece
+      piece = (@pieces - @downloaded_pieces).select{|x| x[:peers].include?(peer) && x[:state] == :pending}.sort_by{|x| -x[:peers_have]}.first
+      piece[:state] = :downloading if piece
     end
     puts "PIECE INSPECT: #{piece.inspect}" if false
     piece

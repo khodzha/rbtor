@@ -68,7 +68,7 @@ class Peer
             @downloading_piece = @torrent.get_piece_for_downloading self unless @downloading_piece
             if @downloading_piece
               puts "#{time} #{self} PIECE DL index: #{@downloading_piece[:index].inspect}" if $logging
-              send_requests
+              send_requests unless @shutdown_flag
             end
           end
         end
@@ -147,7 +147,13 @@ class Peer
       @last_send = Time.now
     end
     bitfield_size = (@pieces.size/8.0).ceil
-    data = [ bitfield_size + 1, 5, [0]*bitfield_size].flatten
+
+    bitfield = @pieces.each_slice(8).map do |slice|
+      slice.reverse.each_with_index.inject(0) do |sum, (el, index)|
+        sum | ((el[:state] == :downloaded ? 1 : 0)<<index)
+      end
+    end
+    data = [ bitfield_size + 1, 5, bitfield].flatten
     puts "BITFIELD message: #{data}" if $logging
     send data.pack('L>C*')
   end
@@ -221,7 +227,7 @@ class Peer
 
   def exit
     mutex.synchronize do
-      @downloading_piece[:downloading] = false if @downloading_piece
+      @downloading_piece[:state] = :pending if @downloading_piece
       @torrent.remove_peer self, @peeraddr
       @shutdown_flag = true
       begin
