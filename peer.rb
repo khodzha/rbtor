@@ -230,9 +230,6 @@ class Peer
         puts e.message
         puts e.backtrace.inspect
         puts 'Socket closing failed'
-      ensure
-        @threads.delete Thread.current
-        @threads.each &:kill
       end
     end
   end

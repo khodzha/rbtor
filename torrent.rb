@@ -70,7 +70,7 @@ class Torrent
       @tracker_data[:peers][0, 60].unpack('C*').each_slice(6).each_with_index do |x, i|
         threads << Thread.new do
           host, port = x[0..3].join('.'), ((x[4]<<8)+x[5]).to_s
-          unless @hosts.include? host
+          unless @hosts.include? host || @hosts.size > 10
             begin
               Timeout::timeout(5) do
                 socket = TCPSocket.new(host, port)
@@ -102,7 +102,7 @@ class Torrent
       @peers.concat new_peers
       new_peers.clear
 
-      sleep 60*5
+      sleep 60*@peers.size
     end
 
     join_pieces
