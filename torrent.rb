@@ -50,7 +50,7 @@ class Torrent
       piece[:blocks_downloaded] = [:not_downloaded] * ( @piece_length.to_f / Peer::BLOCK_SIZE ).ceil
     end
 
-    while @downloaded_pieces.sort_by(&:object_id) != @pieces.sort_by(&:object_id)
+    while @downloaded_pieces.size < @pieces.size
 
       params = {  peer_id: '-RB0001-000000000001', event: 'started', info_hash: @ben.info_hash.scan(/../).map(&:hex).pack('c*'),
             port: 6881, uploaded: 0, downloaded: @downloaded_pieces.size * @piece_length, left: @data[:info][:length] - @downloaded_pieces.size * @piece_length
@@ -154,7 +154,7 @@ class Torrent
   def get_piece_for_downloading peer
     piece = nil
     @mutex.synchronize do
-      piece = (@pieces - @downloaded_pieces).select{|x| x[:peers].include?(peer) && x[:state] == :pending}.sort_by{|x| -x[:peers_have]}.first
+      piece = (@pieces - @downloaded_pieces).select{|x| x[:peers].include?(peer) && x[:state] == :pending}.sort_by{|x| x[:peers_have]}.first
       piece[:state] = :downloading if piece
     end
     puts "PIECE INSPECT: #{piece.inspect}" if false
