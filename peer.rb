@@ -100,7 +100,7 @@ class Peer
         when 1
           @peer_choking = false
         when 2
-          @peer_interested = trueresponse
+          @peer_interested = true
         when 3
           @peer_interested = false
         when 4
@@ -242,7 +242,7 @@ class Peer
 
   def send data
     begin
-      @socket.print data
+      @socket.print data unless @shutdown_flag
     rescue
       exit
     end

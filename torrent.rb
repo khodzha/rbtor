@@ -18,7 +18,6 @@ class Torrent
     @pieces = @data[:info][:pieces].unpack(unpack_format)
     @piece_length = @data[:info][:"piece length"]
 
-
     @peers = []
     @mutex = Mutex.new
     @downloaded_pieces = []
@@ -48,6 +47,13 @@ class Torrent
     @pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0, index: index, state: :pending}; r}
     @pieces.each do |piece|
       piece[:blocks_downloaded] = [:not_downloaded] * ( @piece_length.to_f / Peer::BLOCK_SIZE ).ceil
+    end
+
+    Dir['./tmp/*'].select{|x| File::size?(x) == @piece_length}.each do |filename|
+      filename = File.basename(filename)
+      @pieces[filename.split('_').first.to_i][:state] = :downloaded
+      @pieces[filename.split('_').first.to_i][:blocks_downloaded].map!{|x| :downloaded}
+      @downloaded_pieces << @pieces[filename.split('_').first.to_i]
     end
 
     while @downloaded_pieces.size < @pieces.size
@@ -126,7 +132,7 @@ class Torrent
     piece[:blocks_downloaded][block_index] = :downloaded
     piece_downloaded = piece[:blocks_downloaded].all?{|x| x == :downloaded}
 
-    filename = './tmp/' + @pieces[index][:hashsum].each_byte.map{|b| "%02x"%b}.join + '.tmp'
+    filename = './tmp/' + index.to_s + '_' + @pieces[index][:hashsum].each_byte.map{|b| "%02x"%b}.join + '.tmp'
     File.open(filename, File::CREAT|File::BINARY|File::WRONLY) do |f|
       f.seek(start)
       f.write(data)
@@ -146,7 +152,7 @@ class Torrent
 
   def get_piece index, start, length
     @mutex.synchronize do
-      file_name = './tmp/' + @pieces[index][:hashsum].each_byte.map{|b| "%02x"%b}.join + '.tmp'
+      file_name = './tmp/' + index.to_s + '_'  + @pieces[index][:hashsum].each_byte.map{|b| "%02x"%b}.join + '.tmp'
       File.read(file_name, length, start)
     end
   end
@@ -177,14 +183,14 @@ class Torrent
   def join_pieces
     File.open('./' + @data[:info][:name]) do |f|
       @pieces.each do |piece|
-        file_name = './tmp/' + @pieces[index][:hashsum].each_byte.map{|b| "%02x"%b}.join + '.tmp'
+        file_name = './tmp/' + piece[:index].to_s + '_' + piece[:hashsum].each_byte.map{|b| "%02x"%b}.join + '.tmp'
         f.print File.read(file_name)
       end
     end
   end
 
   def validate_sha filename
-    if Digest::SHA1.file(filename).hexdigest != File.basename(filename, '.tmp')
+    if Digest::SHA1.file(filename).hexdigest != File.basename(filename, '.tmp').split('_').last
       FileUtils.rm_f filename
       false
     else
