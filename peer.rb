@@ -149,8 +149,8 @@ class Peer
     bitfield_size = (@pieces.size/8.0).ceil
 
     bitfield = @pieces.each_slice(8).map do |slice|
-      slice.reverse.each_with_index.inject(0) do |sum, (el, index)|
-        sum | ((el[:state] == :downloaded ? 1 : 0)<<index)
+      slice.each_with_index.inject(0) do |sum, (el, index)|
+        sum | ((el[:state] == :downloaded ? 1 : 0)<<(7 - index))
       end
     end
     data = [ bitfield_size + 1, 5, bitfield].flatten
@@ -163,7 +163,7 @@ class Peer
     index = 0
     bitfield.unpack('C*').each do |byte|
       0.upto(7).each do |offset|
-        if (byte & (1<<offset) == 1)
+        if (byte & (1<<offset) != 0)
           @torrent.update_pieces self, index
         end
         index+=1
