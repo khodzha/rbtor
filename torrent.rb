@@ -73,10 +73,10 @@ class Torrent
       tracker_ben = Bencode.new StringIO.new(res)
       @tracker_data = tracker_ben.decode
 
-      @tracker_data[:peers][0, 60].unpack('C*').each_slice(6).each_with_index do |x, i|
+      @tracker_data[:peers][0, 120].unpack('C*').each_slice(6).each_with_index do |x, i|
         threads << Thread.new do
           host, port = x[0..3].join('.'), ((x[4]<<8)+x[5]).to_s
-          unless @hosts.include?(host) || @hosts.size > 10
+          unless @hosts.include?(host)
             begin
               Timeout::timeout(5) do
                 socket = TCPSocket.new(host, port)
@@ -108,7 +108,7 @@ class Torrent
       @peers.concat new_peers
       new_peers.clear
 
-      sleep 60*@hosts.size
+      sleep 60*( @hosts.size < 5 ? @hosts.size : 5 )
     end
 
     join_pieces
