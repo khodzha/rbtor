@@ -162,7 +162,7 @@ class Peer
     # OPTIMIZE need to rewrite with something like merge ?
     index = 0
     bitfield.unpack('C*').each do |byte|
-      0.upto(7).each do |offset|
+      7.downto(0).each do |offset|
         if (byte & (1<<offset) != 0)
           @torrent.update_pieces self, index
         end
