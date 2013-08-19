@@ -1,11 +1,11 @@
 require 'io/wait'
 require 'forwardable'
 
-$logging = false
-
 class Peer
   extend Forwardable
   def_delegators :@torrent, :mutex
+
+  attr_reader :peer_choking, :peer_choking, :am_interested, :am_choking
 
   BLOCK_SIZE = 2**14
   MAX_REQUESTS = 5
@@ -67,7 +67,6 @@ class Peer
           if @downloading_piece.nil? || ( @current_requests < MAX_REQUESTS && @downloading_piece[:blocks_downloaded].any?{|x| x == :not_downloaded} )
             @downloading_piece = @torrent.get_piece_for_downloading self unless @downloading_piece
             if @downloading_piece
-              puts "#{time} #{self} PIECE DL index: #{@downloading_piece[:index].inspect}" if $logging
               send_requests unless @shutdown_flag
             end
           end
@@ -80,20 +79,17 @@ class Peer
       until @shutdown_flag
         begin
           @socket.wait_readable
-          puts "#{time} #{self} bytes: #{@socket.nread.inspect}" if $logging
           while @socket.nread < 4
             sleep 1
           end
           message_len = @socket.recv(4).unpack('L>')[0]
           next if message_len.nil?
-          puts "MESSAGE_LEN: #{message_len}" if $logging
           message = receive_message message_len
         rescue
           exit
           break
         end
         message_id, payload = message.unpack('Ca*')
-        puts "#{time} #{self} #{message_len} #{message_id} #{payload.unpack('C*').take(40)}" if $logging
         case message_id
         when 0
           @peer_choking = true
@@ -114,7 +110,6 @@ class Peer
           # request
           index, start, length = payload.unpack('L>L>L>')
           data = @torrent.get_piece(index, start, length)
-          puts "REQUEST response: " + data.inspect if $logging
           send data
         when 7
           # piece
@@ -131,7 +126,6 @@ class Peer
         end
       end
     end
-    puts "THREADS_SIZE= #{@threads.size.inspect}" if $logging
     @threads
   end
 
@@ -154,7 +148,6 @@ class Peer
       end
     end
     data = [ bitfield_size + 1, 5, bitfield].flatten
-    puts "BITFIELD message: #{data}" if $logging
     send data.pack('L>C*')
   end
 
@@ -176,7 +169,6 @@ class Peer
       @last_send = Time.now
     end
     data = [1, 1].pack('L>C')
-    puts "UNCHOKE message: #{data.inspect}" if $logging
     send data
   end
 
@@ -185,7 +177,6 @@ class Peer
       @last_send = Time.now
     end
     data = [1, 2].pack('L>C')
-    puts "INTERESTED message: #{data.inspect}" if $logging
     send data
   end
 
@@ -197,7 +188,6 @@ class Peer
         @downloading_piece[:blocks_downloaded][index] = :in_progress
       end
       data = [13, 6, @downloading_piece[:index], index*BLOCK_SIZE, BLOCK_SIZE]
-      puts "REQUEST message: #{data.inspect}" if $logging
       send data.pack('L>CL>3')
       mutex.synchronize do
         @current_requests += 1
@@ -234,8 +224,6 @@ class Peer
         @socket.close
       rescue IOError => e
         puts e.message
-        puts e.backtrace.inspect
-        puts 'Socket closing failed'
       end
     end
   end
