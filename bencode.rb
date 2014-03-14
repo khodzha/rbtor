@@ -1,22 +1,29 @@
 # coding: utf-8
 require 'stringio'
 require 'digest/sha1'
+require 'celluloid'
+require './bencode_data'
 
 class Bencode
   attr_reader :info_hash
+
   def self.from_string str
     Bencode.new StringIO.new(str)
   end
 
   def decode
-    until @file.eof?
-      c = @file.getc
-      @data = parse(c)
-    end
-    @data
+    BencodeData.new decode_data, @info_hash
   end
 
   private
+
+  def decode_data
+    until @file.eof?
+      c = @file.getc
+      data = parse(c)
+    end
+    data
+  end
 
   def initialize streamlike
     @file = if streamlike.is_a?(StringIO)
@@ -24,7 +31,7 @@ class Bencode
     else
       File.open(streamlike, 'rb')
     end
-    @data = nil
+    data = nil
   end
 
   def parse c
