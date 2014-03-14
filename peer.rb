@@ -2,16 +2,18 @@ require 'io/wait'
 require 'forwardable'
 
 class Peer
-  extend Forwardable
-  def_delegators :@torrent, :mutex
+  include Celluloid
+  include Celluloid::Logger
 
   attr_reader :peer_choking, :peer_choking, :am_interested, :am_choking
 
   BLOCK_SIZE = 2**14
   MAX_REQUESTS = 5
 
-  def initialize(socket, pieces, piece_length, torrent)
-    @socket = socket
+  def initialize host, port, pieces, piece_length, torrent
+    @host = host
+    @port = port
+    @socket = nil
     @am_interested = false
     @am_choking = true
 
@@ -20,7 +22,6 @@ class Peer
     @pieces = pieces
     @piece_length = piece_length
     @torrent = torrent
-    @peeraddr = @socket.peeraddr[2]
     @threads = []
     @last_send = Time.now
     @last_receive = Time.now
@@ -40,6 +41,10 @@ class Peer
   end
 
   def start
+    unless send_handshake
+      terminate
+    end
+
     send_bitfield
     send_interested
     send_unchoking
@@ -223,7 +228,7 @@ class Peer
       begin
         @socket.close
       rescue IOError => e
-        puts e.message
+        error e.message
       end
     end
   end
@@ -234,5 +239,26 @@ class Peer
     rescue
       exit
     end
+  end
+
+  def send_handshake
+    begin
+      @socket = TCPSocket.new(@host, @port)
+      @peeraddr = @socket.peeraddr[2]
+
+      handshake = [19].pack('C') + 'BitTorrent protocol' + [0].pack('Q') + @torrent.data.info_hash.scan(/../).map(&:hex).pack('c*') + '-RB0001-000000000001'
+      @socket.print handshake
+      response = @socket.recv(49+19).unpack 'CA19Q>C20C20'
+      if response[0] == 19
+        debug "#{@host}:#{@port} - success"
+        return true
+      end
+
+    rescue Errno::ECONNRESET, Errno::ECONNABORTED, Errno::ETIMEDOUT, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH, 
+            Errno::EADDRNOTAVAIL, Timeout::Error
+      debug "#{@host}:#{@port} - failed"
+    end
+    debug "#{@host}:#{@port} - not success"
+    false
   end
 end

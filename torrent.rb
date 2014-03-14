@@ -8,21 +8,15 @@ require './bencode'
 require './peer'
 
 class Torrent
-  attr_reader :mutex, :piece_length
+  attr_reader :piece_length, :data
 
   def initialize filename
-    @ben = Bencode.new(filename)
-    @data = @ben.decode
+    @data = Bencode.new(filename).decode
+    set_torrent_data
+  end
 
-    unpack_format = 'a20'*(@data[:info][:pieces].size/20)
-    @pieces = @data[:info][:pieces].unpack(unpack_format)
-    @piece_length = @data[:info][:"piece length"]
-
-    @peers = []
-    @mutex = Mutex.new
-    @downloaded_pieces = []
-    @tracker_data = nil
-    @hosts = []
+  def run
+    start
   end
 
   def to_s
@@ -34,31 +28,11 @@ class Torrent
   end
 
   def start
-    Thread.new do
-      loop do
-        puts eval(gets.chomp).inspect
-        sleep 1
-      end
-    end
-
-    new_peers = []
-    threads = []
-
-    @pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0, index: index, state: :pending}; r}
-    @pieces.each do |piece|
-      piece[:blocks_downloaded] = [:not_downloaded] * ( @piece_length.to_f / Peer::BLOCK_SIZE ).ceil
-    end
-
-    Dir['./tmp/*'].select{|x| File::size?(x) == @piece_length}.each do |filename|
-      filename = File.basename(filename)
-      @pieces[filename.split('_').first.to_i][:state] = :downloaded
-      @pieces[filename.split('_').first.to_i][:blocks_downloaded].map!{|x| :downloaded}
-      @downloaded_pieces << @pieces[filename.split('_').first.to_i]
-    end
+    @supervisor = Celluloid::SupervisionGroup.run!
 
     while @downloaded_pieces.size < @pieces.size
 
-      params = {  peer_id: '-RB0001-000000000001', event: 'started', info_hash: @ben.info_hash.scan(/../).map(&:hex).pack('c*'),
+      params = {  peer_id: '-RB0001-000000000001', event: 'started', info_hash: @data.info_hash.scan(/../).map(&:hex).pack('c*'),
             port: 6881, uploaded: 0, downloaded: @downloaded_pieces.size * @piece_length, left: @data[:info][:length] - @downloaded_pieces.size * @piece_length
           }
       @uri = URI @data[:announce]
@@ -71,44 +45,17 @@ class Torrent
         redo
       end
       tracker_ben = Bencode.new StringIO.new(res)
-      @tracker_data = tracker_ben.decode
+      tracker_data = tracker_ben.decode
 
-      @tracker_data[:peers][0, 120].unpack('C*').each_slice(6).each_with_index do |x, i|
-        threads << Thread.new do
-          host, port = x[0..3].join('.'), ((x[4]<<8)+x[5]).to_s
-          unless @hosts.include?(host)
-            begin
-              Timeout::timeout(5) do
-                socket = TCPSocket.new(host, port)
-                handshake = [19].pack('C') + 'BitTorrent protocol' + [0].pack('Q') + @ben.info_hash.scan(/../).map(&:hex).pack('c*') + '-RB0001-000000000001'
-                socket.print handshake
-                data = socket.recv 49+19
-                response = data.unpack 'CA19Q>C20C20'
-                if response[0] == 19
-                  @mutex.synchronize do
-                    new_peers << Peer.new(socket, @pieces, @piece_length, self)
-                    @hosts << host
-                  end
-                end
-              end
-            rescue Errno::ECONNRESET, Errno::ECONNABORTED, Errno::ETIMEDOUT, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH, 
-                    Errno::EADDRNOTAVAIL, Timeout::Error
-              puts "#{host}:#{port} - failed"
-            end
-          else
-            puts "#{host}:#{port} - was there"
-          end
+      tracker_data[:peers][0, 120].unpack('C*').each_slice(6).each_with_index do |x, i|
+        host, port = x[0..3].join('.'), ((x[4]<<8)+x[5]).to_s
+        unless Celluloid::Actor[host]
+          peer = @supervisor.add Peer, as: "#{host}", args: [host, port, @pieces, @piece_length, self]
+          Celluloid::Actor[host].async.start
         end
       end
 
-      threads.map(&:join)
-      threads.clear
-
-      new_peers.map(&:start)
-      @peers.concat new_peers
-      new_peers.clear
-
-      sleep 60*( @hosts.size < 5 ? @hosts.size : 5 )
+      sleep 300
     end
 
     join_pieces
@@ -179,6 +126,28 @@ class Torrent
   end
 
   private
+
+  def set_torrent_data
+    unpack_format = 'a20'*(@data[:info][:pieces].size/20)
+    @pieces = @data[:info][:pieces].unpack(unpack_format)
+    @piece_length = @data[:info][:"piece length"]
+
+    @peers = []
+    @downloaded_pieces = []
+    @hosts = []
+
+    @pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0, index: index, state: :pending}; r}
+    @pieces.each do |piece|
+      piece[:blocks_downloaded] = [:not_downloaded] * ( @piece_length.to_f / Peer::BLOCK_SIZE ).ceil
+    end
+
+    Dir['./tmp/*'].select{|x| File::size?(x) == @piece_length}.each do |filename|
+      filename = File.basename(filename)
+      @pieces[filename.split('_').first.to_i][:state] = :downloaded
+      @pieces[filename.split('_').first.to_i][:blocks_downloaded].map!{|x| :downloaded}
+      @downloaded_pieces << @pieces[filename.split('_').first.to_i]
+    end
+  end
 
   def join_pieces
     File.open('./' + @data[:info][:name]) do |f|
