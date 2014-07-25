@@ -1,7 +1,7 @@
 require 'io/wait'
 require 'forwardable'
 
-class Peer
+class PeerActor
   include Celluloid
   include Celluloid::Logger
 

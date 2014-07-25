@@ -1,4 +1,4 @@
-require './torrent'
+require './torrent_actor'
 
-FILE_NAME = 'Defiance.torrent'
-Torrent.new(FILE_NAME).run
+FILE_NAME = 'test.torrent'
+TorrentActor.new(FILE_NAME).run
