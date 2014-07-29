@@ -1,7 +1,7 @@
 class ServerActor
   include Celluloid
 
-  def announce announce_url, info_hash, downloaded, left
+  def announce announce_url, info_hash, downloaded, left, state=nil
     # TODO: implement :event key
     params = {  peer_id: '-RB0001-000000000001', event: :started, info_hash: info_hash,
               port: 6881, uploaded: 0, downloaded: downloaded, left: left

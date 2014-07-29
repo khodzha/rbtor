@@ -14,6 +14,10 @@ class BencodeData
     data[:announce]
   end
 
+  def piece_length
+    data[:info][:"piece length"]
+  end
+
   def [] param
     data[param]
   end

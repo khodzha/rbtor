@@ -1,16 +1,19 @@
 require 'io/wait'
-require 'forwardable'
 
 class PeerActor
   include Celluloid
   include Celluloid::Logger
 
-  attr_reader :peer_choking, :peer_choking, :am_interested, :am_choking
+  attr_reader :peer_choking, :peer_interested, :am_interested, :am_choking
+  attr_reader :last_send, :last_receive, :torrent
 
   BLOCK_SIZE = 2**14
   MAX_REQUESTS = 5
 
-  def initialize host, port, pieces, piece_length, torrent
+  extend Forwardable
+  def_delegators :torrent, :piece_length, :pieces
+
+  def initialize host, port, torrent
     @host = host
     @port = port
     @socket = nil
@@ -19,10 +22,8 @@ class PeerActor
 
     @peer_interested = false
     @peer_choking = true
-    @pieces = pieces
-    @piece_length = piece_length
+
     @torrent = torrent
-    @threads = []
     @last_send = Time.now
     @last_receive = Time.now
     @downloading_piece = nil
@@ -31,14 +32,9 @@ class PeerActor
   end
 
   def to_s
-    peer_str = @peeraddr.to_s
-    peer_str << "\t" if peer_str.size < 12
-    "#{peer_str}\t#{@peer_choking}\t#{@peer_interested}\t"
+    "#{@host.to_s}\tchoke: #{@peer_choking} int: #{@peer_interested}\t"
   end
-
-  def inspect
-    "<#{self.to_s}>"
-  end
+  def inspect; to_s; end
 
   def start
     unless send_handshake
@@ -49,22 +45,8 @@ class PeerActor
     send_interested
     send_unchoking
 
-    @threads << Thread.new do
-      until @shutdown_flag
-        # keep alive
-        sleep 30
-        if Time.now.to_i - @last_send.to_i > 90
-          mutex.synchronize do
-            @last_send = Time.now
-          end
-          data = [0, 0, 0, 0].pack('C4')
-          send data
-        end
-        if Time.now.to_i - @last_receive.to_i > 180
-          exit
-        end
-      end
-    end
+    @keepalive_actor = PeerKeepaliveActor.new self
+    @download_actor = PeerDownloadactor.new self
 
     @threads << Thread.new do
       until @shutdown_flag
@@ -107,7 +89,7 @@ class PeerActor
         when 4
           # have
           piece_index = payload.unpack('L>')[0]
-          @torrent.update_pieces self, piece_index
+          @torrent.add_peer_to_piece self, piece_index
         when 5
           # bitfield
           bitfield_to_array payload
@@ -131,7 +113,6 @@ class PeerActor
         end
       end
     end
-    @threads
   end
 
   def send_have index
@@ -139,17 +120,27 @@ class PeerActor
     send data
   end
 
+  def touch_last_send
+    @last_send = Time.now
+  end
+
+  def touch_last_receive
+    @last_receive = Time.now
+  end
+
+  def increase_requests
+    @current_requests += 1
+  end
+
   private
 
   def send_bitfield
-    mutex.synchronize do
-      @last_send = Time.now
-    end
-    bitfield_size = (@pieces.size/8.0).ceil
+    touch_last_send
+    bitfield_size = (pieces.size/8.0).ceil
 
-    bitfield = @pieces.each_slice(8).map do |slice|
+    bitfield = pieces.each_slice(8).map do |slice|
       slice.each_with_index.inject(0) do |sum, (el, index)|
-        sum | ((el[:state] == :downloaded ? 1 : 0)<<(7 - index))
+        sum | ((el.state == :downloaded ? 1 : 0)<<(7 - index))
       end
     end
     data = [ bitfield_size + 1, 5, bitfield].flatten
@@ -162,7 +153,7 @@ class PeerActor
     bitfield.unpack('C*').each do |byte|
       7.downto(0).each do |offset|
         if (byte & (1<<offset) != 0)
-          @torrent.update_pieces self, index
+          @torrent.add_peer_to_piece self, index
         end
         index+=1
       end
@@ -183,25 +174,6 @@ class PeerActor
     end
     data = [1, 2].pack('L>C')
     send data
-  end
-
-  def send_requests
-    (MAX_REQUESTS - @current_requests).times do |i|
-      index = @downloading_piece[:blocks_downloaded].find_index(:not_downloaded)
-      break if index.nil?
-      mutex.synchronize do
-        @downloading_piece[:blocks_downloaded][index] = :in_progress
-      end
-      data = [13, 6, @downloading_piece[:index], index*BLOCK_SIZE, BLOCK_SIZE]
-      send data.pack('L>CL>3')
-      mutex.synchronize do
-        @current_requests += 1
-      end
-    end
-
-    mutex.synchronize do
-      @last_send = Time.now
-    end
   end
 
   def time

@@ -3,14 +3,23 @@ require 'socket'
 require 'thread'
 require 'timeout'
 require 'fileutils'
+require 'byebug'
+require 'forwardable'
+
+require 'celluloid/autostart'
 
 require './bencode'
 require './peer_actor'
 require './server_actor'
+require './pieces_actor'
 
 class TorrentActor
-  attr_reader :piece_length, :data, :server_actor
+  attr_reader :data, :server_actor, :pieces_actor
   include Celluloid
+
+  extend Forwardable
+  def_delegators :pieces_actor, :downloaded_pieces, :pieces, :add_peer_to_piece
+  def_delegators :data, :piece_length
 
   def initialize filename
     @data = Bencode.new(filename).decode
@@ -18,40 +27,29 @@ class TorrentActor
     set_torrent_data
   end
 
-  def run; start; end
-
   def to_s
-    "#{@peers.size} #{@pieces.size} #{@downloaded_pieces.size}"
+    "#{@peers.size}"
   end
   def inspect; to_s; end
 
   def start
-    while @downloaded_pieces.size < @pieces.size
+    now_and_every 300 do
+      if downloaded_pieces.size < pieces.size
 
-      peers_response = server_actor.announce data.announce, data.info_hash, downloaded_size, left_size
-      puts "peers_response, #{peers_response.inspect}"
-      peers_response.each_with_index do |x, i|
-        host, port = x[0..3].join('.'), ((x[4]<<8)+x[5]).to_s
-        unless Actor[host]
-          Actor[host] = PeerActor.new host, port, @pieces, @piece_length, self
-          Actor[host].async.start
+        peers_response = server_actor.announce data.announce, data.info_hash, downloaded_size, left_size
+        puts "peers_response, #{peers_response.inspect}"
+        peers_response.each_with_index do |x, i|
+          host, port = x[0..3].join('.'), ((x[4]<<8)+x[5]).to_s
+          unless Actor[host]
+            Actor[host] = PeerActor.new host, port, self
+            Actor[host].async.start
+          end
         end
-      end
-
-      sleep 300
-    end
-
-    join_pieces
-  end
-
-  def update_pieces peer, piece_index
-    piece = @pieces[piece_index]
-    @mutex.synchronize do
-      if piece && !piece[:peers].include?(peer)
-        piece[:peers] << peer
-        piece[:peers_have] += 1
+      else
+        shutdown
       end
     end
+    Kernel.sleep()
   end
 
   def save_piece peer, index, start, data
@@ -71,7 +69,7 @@ class TorrentActor
     if piece_downloaded && validate_sha(filename)
       @downloaded_pieces << @pieces[index]
     elsif piece_downloaded
-      piece[:blocks_downloaded] = [:not_downloaded] * ( @piece_length.to_f / PeerActor::BLOCK_SIZE ).ceil
+      piece[:blocks_downloaded] = [:not_downloaded] * ( piece_length.to_f / PeerActor::BLOCK_SIZE ).ceil
       piece[:state] = :downloaded
     end
   end
@@ -111,32 +109,19 @@ class TorrentActor
   private
 
   def set_torrent_data
-    unpack_format = 'a20'*(@data[:info][:pieces].size/20)
-    @pieces = @data[:info][:pieces].unpack(unpack_format)
-    @piece_length = @data[:info][:"piece length"]
+    unpack_format = 'a20'*(data[:info][:pieces].size/20)
+    @pieces_actor = PiecesActor.new data[:info][:pieces].unpack(unpack_format), piece_length
 
     @peers = []
-    @downloaded_pieces = []
     @hosts = []
-
-    @pieces = @pieces.each_with_index.inject([]) {|r, (v, index)| r[index] = {hashsum: v, peers: [], peers_have: 0, index: index, state: :pending}; r}
-    @pieces.each do |piece|
-      piece[:blocks_downloaded] = [:not_downloaded] * ( @piece_length.to_f / PeerActor::BLOCK_SIZE ).ceil
-    end
-
-    Dir['./tmp/*'].select{|x| File::size?(x) == @piece_length}.each do |filename|
-      filename = File.basename(filename)
-      @pieces[filename.split('_').first.to_i][:state] = :downloaded
-      @pieces[filename.split('_').first.to_i][:blocks_downloaded].map!{|x| :downloaded}
-      @downloaded_pieces << @pieces[filename.split('_').first.to_i]
-    end
   end
 
   def downloaded_size
-    @downloaded_pieces.size * @piece_length
+    downloaded_pieces.size * piece_length
   end
+
   def left_size
-    data.length - @downloaded_pieces.size * @piece_length
+    data.length - downloaded_size
   end
 
   def join_pieces
@@ -146,6 +131,17 @@ class TorrentActor
         f.print File.read(file_name)
       end
     end
+  end
+
+  def shutdown
+    # TODO: finish this method
+    join_pieces
+    terminate
+  end
+
+  def now_and_every time, &block
+    block.call
+    every time, &block
   end
 
   def validate_sha filename
