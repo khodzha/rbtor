@@ -60,7 +60,8 @@ class TorrentActor
     piece[:blocks_downloaded][block_index] = :downloaded
     piece_downloaded = piece[:blocks_downloaded].all?{|x| x == :downloaded}
 
-    filename = './tmp/' + index.to_s + '_' + @pieces[index][:hashsum].each_byte.map{|b| "%02x"%b}.join + '.tmp'
+
+    filename = tmp_filename index, @pieces[index][:hashsum]
     File.open(filename, File::CREAT|File::BINARY|File::WRONLY) do |f|
       f.seek(start)
       f.write(data)
@@ -80,7 +81,7 @@ class TorrentActor
 
   def get_piece index, start, length
     @mutex.synchronize do
-      file_name = './tmp/' + index.to_s + '_'  + @pieces[index][:hashsum].each_byte.map{|b| "%02x"%b}.join + '.tmp'
+      file_name = tmp_filename index, @pieces[index][:hashsum]
       File.read(file_name, length, start)
     end
   end
@@ -107,6 +108,9 @@ class TorrentActor
   end
 
   private
+  def tmp_filename index, hashsum
+    './tmp/' + index.to_s + '_' + hashsum.each_byte.map{|b| "%02x"%b}.join + '.tmp'
+  end
 
   def set_torrent_data
     unpack_format = 'a20'*(data[:info][:pieces].size/20)
@@ -127,7 +131,7 @@ class TorrentActor
   def join_pieces
     File.open('./' + @data[:info][:name]) do |f|
       @pieces.each do |piece|
-        file_name = './tmp/' + piece[:index].to_s + '_' + piece[:hashsum].each_byte.map{|b| "%02x"%b}.join + '.tmp'
+        file_name = tmp_filename piece[:index], piece[:hashsum]
         f.print File.read(file_name)
       end
     end
